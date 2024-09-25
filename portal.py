@@ -135,22 +135,3 @@ class PS200Portal:
                 await asyncio.sleep_ms(3000)
 
         udps.close()
-
-
-# Main code entrypoint
-try:
-    # Instantiate app and run
-    ps200Portal = PS200Portal()
-
-    if IS_UASYNCIO_V3:
-        asyncio.run(ps200Portal.start())
-    else:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(ps200Portal.start())
-
-except KeyboardInterrupt:
-    print('Bye')
-
-finally:
-    if IS_UASYNCIO_V3:
-        asyncio.new_event_loop()  # Clear retained state
