@@ -43,6 +43,7 @@ import socket
 import uasyncio as asyncio
 import os
 import portal
+from portal import PS200Portal
 # import portal.portal
 # from portal.portal import PS200Portal
 
