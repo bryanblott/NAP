@@ -20,22 +20,22 @@
 #   led.value(not led.value())
 #   sleep(1)
 
-""
-Minimal captive portal, using uasyncio v3 (MicroPython 1.13+) with a fallback for earlier versions of uasyncio/MicroPython.
+# ""
+# Minimal captive portal, using uasyncio v3 (MicroPython 1.13+) with a fallback for earlier versions of uasyncio/MicroPython.
 
-* License: MIT
-* Repository: https://github.com/metachris/micropython-captiveportal
-* Author: Chris Hager <chris@linuxuser.at> / https://twitter.com/metachris
+# * License: MIT
+# * Repository: https://github.com/metachris/micropython-captiveportal
+# * Author: Chris Hager <chris@linuxuser.at> / https://twitter.com/metachris
 
-Built upon:
-- https://github.com/p-doyle/Micropython-DNSServer-Captive-Portal
+# Built upon:
+# - https://github.com/p-doyle/Micropython-DNSServer-Captive-Portal
 
-References:
-- http://docs.micropython.org/en/latest/library/uasyncio.html
-- https://github.com/peterhinch/micropython-async/blob/master/v3/README.md
-- https://github.com/peterhinch/micropython-async/blob/master/v3/docs/TUTORIAL.md
-- https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5
-"""
+# References:
+# - http://docs.micropython.org/en/latest/library/uasyncio.html
+# - https://github.com/peterhinch/micropython-async/blob/master/v3/README.md
+# - https://github.com/peterhinch/micropython-async/blob/master/v3/docs/TUTORIAL.md
+# - https://www.w3.org/Protocols/rfc2616/rfc2616-sec5.html#sec5
+# """
 import gc
 import sys
 import network
@@ -47,7 +47,7 @@ IS_UASYNCIO_V3 = hasattr(asyncio, "__version__") and asyncio.__version__ >= (3,)
 
 
 # Access point settings
-SERVER_SSID = 'myssid'  # max 32 characters
+SERVER_SSID = 'PS200'  # max 32 characters
 SERVER_IP = '10.0.0.1'
 SERVER_SUBNET = '255.255.255.0'
 
