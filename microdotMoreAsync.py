@@ -3,10 +3,15 @@ import time
 import uasyncio
 from microdot import Microdot
 from machine import Pin
+import security
+from security import WIFI_SSID
+from security import WIFI_PASSWORD
 
 # WIFI CONNECTION
-ssid = 'SOMEWIFINAME'
-password = 'SOMEWIFIPASSWORD'
+# ssid = 'SOMEWIFINAME'
+# password = 'SOMEWIFIPASSWORD'
+ssid = WIFI_SSID
+password = WIFI_PASSWORD
 wlan = network.WLAN(network.STA_IF)
 wlan.active(True)
 time.sleep(1.5)
