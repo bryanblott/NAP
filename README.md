@@ -28,4 +28,57 @@ esptool.py --chip esp32 --port /dev/cu.usbserial-0001 --baud 460800 write_flash 
 
 python3 -m serial.tools.miniterm /dev/cu.usbserial-0001 115200
 
-5.
+
+
+
+
+Default PyMaker JSON for device configs:
+
+```
+{
+    "pymakr.devices.configs": {
+
+        "serial:///dev/tty.BLTH": {
+            "autoConnect": "onLostConnection",
+            "name": "",
+            "username": "micro",
+            "password": "python",
+            "hidden": false,
+            "rootPath": null,
+            "adapterOptions": {}
+        },
+        "0001": {
+            "autoConnect": "onLostConnection",
+            "name": "",
+            "username": "micro",
+            "password": "python",
+            "hidden": false,
+            "rootPath": "/",
+            "adapterOptions": {}
+        },
+        "serial:///dev/tty.Bluetooth-Incoming-Port": {
+            "autoConnect": "onLostConnection",
+            "name": "",
+            "username": "micro",
+            "password": "python",
+            "hidden": false,
+            "rootPath": null,
+            "adapterOptions": {}
+        }
+    },
+    "pymakr.devices.include": [
+        "manufacturer=Pycom.*",
+        "manufacturer=FTDI",
+        "manufacturer=Microsoft",
+        "manufacturer=Microchip Technology.*",
+        "friendlyName=.*CH34[01].*",
+        "friendlyName=.*CP21.*",
+        "manufacturer=(?!undefined)",
+        "manufacturer=Silicon Laboratories*",
+        "manufacturer=Silicon Labs*"
+    ],
+    "pymakr.devices.nameTemplate": "{displayName} / {productId} / {projectName}",
+    "explorer.confirmPasteNative": false,
+    "workbench.activityBar.location": "top"
+}
+```

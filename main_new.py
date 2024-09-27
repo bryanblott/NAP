@@ -23,5 +23,9 @@ except KeyboardInterrupt:
 
 finally:
     if IS_UASYNCIO_V3:
-        asyncio.run(portal.http_server.close_server())  # Ensure HTTP server is closed
+        if portal and portal.http_server:
+            print(f"Attempting to close HTTP server... portal: {portal}, portal.http_server: {portal.http_server}")
+            asyncio.run(portal.http_server.close_server())  # Ensure HTTP server is closed
+        else:
+            print(f"HTTP server instance is None. portal: {portal}, portal.http_server: {portal.http_server}")
         asyncio.new_event_loop()  # Clear retained state
