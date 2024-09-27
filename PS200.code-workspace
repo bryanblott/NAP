@@ -1,8 +1,12 @@
 {
 	"folders": [
 		{
-			"name": "PS200",
 			"path": "."
+		},
+		{
+			"name": "serial://dev/tty.usbserial-0001",
+			"uri": "serial://%2fdev%2ftty.usbserial-0001/"
 		}
-	]
+	],
+	"settings": {}
 }
