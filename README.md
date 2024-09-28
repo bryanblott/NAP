@@ -1,7 +1,19 @@
+# NAP - Not Another Portal!
+## ESP32 Captive Portal with DNS and HTTP Server
 
-# ESP32 Captive Portal with DNS and HTTP Server
+NAP is a project that creates a captive portal on an ESP32 device using MicroPython. It sets up a Wi-Fi access point, a DNS server, and an HTTP server with optional TLS support. 
 
-This project creates a captive portal on an ESP32 device using MicroPython. It sets up a Wi-Fi access point, a DNS server, and an HTTP server with optional TLS support. The project is designed to provide a user-friendly interface for configuring the device or for redirecting clients to a specific page when they connect to the Wi-Fi.
+NAP was born out of my personal frustration with many of the captive portal libraries that I have played with in the past, and the difficulty I have had while trying to implement other microcontroller functionality alonside them. It is designed in such a way that major functionality has been moved to classes that can easily be refactored, augmented, or replaced. Adding new classes without breaking existing functionality should be reliatively simple as well.
+
+Currently this project has been incompletely tested on ESP32 devices only. 
+
+## Coming Soon:
+
+- A better default HTML interface
+- Functionality to join your ESP32 existing WiFi networks and turn off AP mode
+- GPIO examples, including a reset button
+- TLS/SSL/HTTPS examples and documentation
+- Moving more functionality to config.json 
 
 ## Project Overview
 
