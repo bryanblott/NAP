@@ -1,3 +1,5 @@
 security.local
 security.py
-PS200.code-workspace
+*.code-workspace
+pymakr.conf
+config.json
