@@ -1,8 +1,34 @@
+################################################################################
 # wifi_access_point.py
-import network # type: ignore
+#
+# WiFiAccessPoint is a class that manages the creation and control of a Wi-Fi 
+# access point using an ESP32 device.
+#
+# Attributes:
+#     ssid (str): The SSID (name) of the Wi-Fi access point.
+#     password (str): The password for the Wi-Fi access point.
+#     ap (network.WLAN): The network interface for the access point.
+#
+# Methods:
+#     __init__(ssid="ESP32_Captive_Portal", password="12345678"):
+#         Initializes the WiFiAccessPoint with the given SSID and password.
+#     start():
+#         Starts the Wi-Fi access point and waits until it becomes active. 
+#         Logs the IP configuration once active.
+################################################################################
+
+
+################################################################################
+# Dependencies
+################################################################################
+import network 
 import time
 from logging_utility import log
 
+
+################################################################################
+# Code
+################################################################################
 class WiFiAccessPoint:
     def __init__(self, ssid="ESP32_Captive_Portal", password="12345678"):
         self.ssid = ssid
