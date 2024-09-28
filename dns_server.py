@@ -1,8 +1,30 @@
-# dns_server.py
+################################################################################
+# This module defines a DNSServer class that implements a simple asynchronous 
+# DNS server using Python's asyncio library. The server listens for DNS requests 
+# on port 53 and responds with a predefined IP address. It handles incoming DNS 
+# requests concurrently and ensures controlled access to the DNS handling logic 
+# using an asyncio.Lock.
+#
+# Classes:
+#     DNSServer: A class to create and run an asynchronous DNS server.
+#
+# Usage:
+#     Create an instance of the DNSServer class and call its run method within 
+#     an asyncio event loop to start the server.
+################################################################################
+
+
+################################################################################
+# Dependencies
+################################################################################
 import socket
 import uasyncio as asyncio
 from logging_utility import log
 
+
+################################################################################
+# DNS Query Class
+################################################################################
 class DNSQuery:
     def __init__(self, data):
         self.data = data
@@ -40,6 +62,10 @@ class DNSQuery:
         packet += bytes(map(int, ip.split('.')))  # 4 bytes of IP
         return packet
 
+
+################################################################################
+# DNS Server Class
+################################################################################
 class DNSServer:
     def __init__(self, server_ip="192.168.4.1"):
         self.server_ip = server_ip

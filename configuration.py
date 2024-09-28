@@ -1,7 +1,31 @@
-# configuration.py
+################################################################################
+# Configuration class for managing application settings.
+#
+# Attributes:
+#     CONFIG_FILE (str): The name of the configuration file.
+#
+# Methods:
+#     __init__():
+#         Initializes the Configuration object with default settings.
+#     
+#     save_default_config():
+#         Creates and saves the default configuration file if it does not exist.
+#     
+#     load():
+#         Loads configuration from file, or uses defaults if not found.
+################################################################################
+
+
+################################################################################
+# Dependencies
+################################################################################
 import json
 from logging_utility import log
 
+
+################################################################################
+# Code
+################################################################################
 class Configuration:
     CONFIG_FILE = 'config.json'
 

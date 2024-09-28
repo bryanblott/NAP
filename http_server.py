@@ -1,10 +1,52 @@
-# http_server.py
+################################################################################
+# This module defines the HTTPServer class, which is responsible for starting 
+# and managing an HTTP or HTTPS server on an ESP32 device. The server can serve 
+# a specified index file or a default HTML page if the index file is not found. 
+# It also supports TLS if the necessary certificate and key files are available.
+#
+# Classes:
+#     HTTPServer: A class to handle HTTP/HTTPS server operations, including 
+#     checking for TLS support, serving files, and managing connections.
+#
+# Methods:
+#     __init__(self, cert_file='cert.pem', key_file='private.key', index_file='index.html'):
+#         Initializes the HTTPServer instance with the specified certificate, 
+#         key, and index files.
+#
+#     check_tls_support(self):
+#         Checks if both the certificate and key files are present to determine 
+#         TLS support.
+#
+#     check_index_file(self):
+#         Checks if the index file exists in the filesystem.
+#
+#     async handle_connection(self, reader, writer):
+#         Handles incoming HTTP requests and serves the appropriate response.
+#
+#     get_default_html_response(self):
+#         Returns the default HTML response when the index file is not found.
+#
+#     async start(self):
+#         Starts the HTTP or HTTPS server depending on the availability of TLS.
+#
+#     async close_server(self):
+#         Gracefully closes the HTTP/HTTPS server if it exists.
+################################################################################
+
+
+################################################################################
+# Dependencies
+################################################################################
 import uasyncio as asyncio
 import tls
 import gc
 import os
 from logging_utility import log
 
+
+################################################################################
+# Code
+################################################################################
 class HTTPServer:
     def __init__(self, cert_file='cert.pem', key_file='private.key', index_file='index.html'):
         self.cert_file = cert_file

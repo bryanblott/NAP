@@ -1,5 +1,5 @@
 # wifi_access_point.py
-import network
+import network # type: ignore
 import time
 from logging_utility import log
 

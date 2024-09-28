@@ -1,4 +1,28 @@
-# captive_portal.py
+################################################################################
+# This module defines the CaptivePortal class, which is responsible for setting 
+# up and managing a captive portal. A captive portal is a web page that users 
+# are automatically redirected to when they connect to a Wi-Fi network. This 
+# implementation includes starting and stopping Wi-Fi access points, DNS servers, 
+# and HTTP servers, with support for asynchronous operations and a watchdog timer 
+# to ensure reliability.
+#
+# Classes:
+#     CaptivePortal: Manages the lifecycle of the captive portal, including 
+#     starting and stopping the Wi-Fi AP, DNS, and HTTP servers.
+#
+# Methods:
+#     __init__(self, config): Initializes the CaptivePortal with the given 
+#     configuration.
+#     start(self): Asynchronously starts the Wi-Fi AP, DNS server, and HTTP 
+#     server, and keeps the main task running indefinitely.
+#     stop(self): Asynchronously stops the DNS and HTTP servers and releases 
+#     resources.
+################################################################################
+
+
+################################################################################
+# Dependencies
+################################################################################
 import uasyncio as asyncio
 import machine
 from logging_utility import log
@@ -6,6 +30,10 @@ from wifi_access_point import WiFiAccessPoint
 from dns_server import DNSServer
 from http_server import HTTPServer
 
+
+################################################################################
+# Code
+################################################################################
 class CaptivePortal:
     def __init__(self, config):
         self.wifi_ap = WiFiAccessPoint(config["ssid"], config["password"])
