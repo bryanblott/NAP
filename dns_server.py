@@ -18,12 +18,12 @@
 # Dependencies
 ################################################################################
 import socket
-import uasyncio as asyncio
+import uasyncio as asyncio # type: ignore
 from logging_utility import log
 
 
 ################################################################################
-# DNS Query Class
+# Code
 ################################################################################
 class DNSQuery:
     def __init__(self, data):
@@ -60,27 +60,33 @@ class DNSQuery:
         packet += b'\xc0\x0c'  # Pointer to domain name
         packet += b'\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04'  # Response type, ttl and resource data length -> 4 bytes
         packet += bytes(map(int, ip.split('.')))  # 4 bytes of IP
+
         return packet
 
 
-################################################################################
-# DNS Server Class
-################################################################################
 class DNSServer:
     def __init__(self, server_ip="192.168.4.1"):
         self.server_ip = server_ip
         self.udps = None
+        self._running = False
         self.lock = asyncio.Lock()  # Lock for concurrent DNS access
 
     async def run(self):
         """Run the DNS server to handle incoming DNS requests"""
+        await self.start()  # Call the start method to run the DNS server
+
+    async def start(self):
+        """Start the DNS server to handle incoming DNS requests"""
+        self._running = True
         self.udps = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.udps.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow address reuse
         self.udps.setblocking(False)  # Set the socket to non-blocking mode
         try:
             self.udps.bind(('0.0.0.0', 53))
             log("DNS server started on port 53")
-
-            while True:
+            log("DNS handling loop started.")
+            
+            while self._running:
                 try:
                     await self.handle_dns(self.udps)
                 except asyncio.CancelledError:
@@ -93,10 +99,7 @@ class DNSServer:
             log(f"Failed to bind DNS server on port 53: {e}", "ERROR")
             raise
         finally:
-            if self.udps:
-                log("Closing DNS server socket...")
-                self.udps.close()  # Ensure socket is closed to release resources
-                log("DNS server socket closed.")
+            await self.stop_internal()
 
     async def handle_dns(self, sock):
         """Handle DNS requests with a polling approach and controlled access"""
@@ -110,6 +113,8 @@ class DNSServer:
                 log(f"Replying: {DNS.domain} -> {self.server_ip}")
             except asyncio.CancelledError:
                 log("DNS handling task cancelled gracefully.", "WARNING")
+                await asyncio.sleep(0)  # Yield control to allow clean exit
+                return
             except OSError as e:
                 if e.args[0] == 11:  # EAGAIN or no data received yet
                     await asyncio.sleep(0)  # Yield control back to the event loop
@@ -119,3 +124,23 @@ class DNSServer:
             except Exception as e:
                 log(f"General error in DNS handling: {e}", "ERROR")
                 await asyncio.sleep(1)
+
+    async def stop(self):
+        """Stop the DNS server and release resources"""
+        log("Stopping DNS server internal loop...")
+        self._running = False
+        if self.udps:
+            log("Closing DNS server socket...")
+            self.udps.close()
+            self.udps = None
+            log("DNS server socket closed.")
+        await asyncio.sleep(0.1)  # Ensure socket closure is processed
+
+    async def stop_internal(self):
+        """Internal stop method for cleanup and graceful shutdown"""
+        if self.udps:
+            log("Closing DNS server socket from internal stop...")
+            self.udps.close()
+            self.udps = None
+            log("DNS server socket closed from internal stop.")
+        log("DNS server internal loop stopped.")

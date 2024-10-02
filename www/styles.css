@@ -1,0 +1,19 @@
+/* styles.css */
+body {
+    background-color: black; /* Set the background color to black */
+    color: white; /* Set the text color to white */
+    font-family: Arial, sans-serif; /* Use a clean, sans-serif font */
+}
+
+h1, p {
+    text-align: center; /* Center the text */
+    margin: 20px; /* Add some space around the text */
+}
+
+h1 {
+    font-size: 2em; /* Increase the font size of the main heading */
+}
+
+p {
+    font-size: 1.2em; /* Slightly increase the font size of paragraphs */
+}

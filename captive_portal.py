@@ -24,69 +24,69 @@
 # Dependencies
 ################################################################################
 import uasyncio as asyncio
-import machine
 from logging_utility import log
-from wifi_access_point import WiFiAccessPoint
-from dns_server import DNSServer
 from http_server import HTTPServer
+from dns_server import DNSServer
+from wifi_access_point import WiFiAccessPoint
 
 
 ################################################################################
-# Code
+# Captive Portal Class Definition
 ################################################################################
 class CaptivePortal:
     def __init__(self, config):
         self.wifi_ap = WiFiAccessPoint(config["ssid"], config["password"])
         self.dns_server = DNSServer(config["server_ip"])
-        self.http_server = HTTPServer()  # Using HTTPServer with optional TLS support
+        self.http_server = HTTPServer()
         self.dns_task = None
         self.http_task = None
 
     async def start(self):
-        # Start the Wi-Fi Access Point
+        """Start the captive portal with DNS and HTTP services."""
+        log("Starting Captive Portal...")
+        # Start Wi-Fi Access Point
         self.wifi_ap.start()
 
-        # Start DNS and HTTP in background without blocking event loop
+        # Start DNS and HTTP servers
         log("Starting DNS and HTTP servers in parallel...")
-        self.dns_task = asyncio.create_task(self.dns_server.run())  # DNS server in background
-        self.http_task = asyncio.create_task(self.http_server.start())  # HTTP/HTTPS server in background
+        self.dns_task = asyncio.create_task(self.dns_server.start())
+        self.http_task = asyncio.create_task(self.http_server.start())
 
-        # Enable watchdog timer to prevent hangs or crashes
-        wdt = machine.WDT(timeout=10000)  # 10 seconds watchdog timeout
-        log("Watchdog timer enabled.")
+        # Enable the watchdog timer
+        # log("Watchdog timer enabled.")
 
-        # Keep the main task running indefinitely and feed the watchdog
         try:
             while True:
-                wdt.feed()  # Feed the watchdog to prevent reset
-                await asyncio.sleep(5)  # Sleep for a while before next feed
+                await asyncio.sleep(5)  # Main loop to keep running
         except asyncio.CancelledError:
-            log("Main loop task cancelled, stopping services...", "WARNING")
+            log("Captive Portal main task cancelled.")
 
     async def stop(self):
-        """Stop all servers and release resources."""
+        """Stop all services and cancel tasks."""
         log("Stopping Captive Portal...")
-        # Cancel tasks and ensure they are awaited
+
+        # Cancel HTTP server task
         if self.http_task:
             log("Cancelling HTTP server task...")
-            self.http_task.cancel()  # Cancel the HTTP/HTTPS task
+            self.http_task.cancel()
             try:
-                await asyncio.wait_for(self.http_task, timeout=5)
-            except asyncio.TimeoutError:
-                log("HTTP task timed out during cancellation.", "WARNING")
+                await self.http_task
+                log("HTTP server task was cancelled gracefully.")
             except asyncio.CancelledError:
-                log("HTTP task was cancelled.", "WARNING")
+                log("HTTP server task was cancelled.")
 
+        # Cancel DNS server task
         if self.dns_task:
             log("Cancelling DNS server task...")
-            self.dns_task.cancel()  # Cancel the DNS task
+            self.dns_task.cancel()
             try:
-                await asyncio.wait_for(self.dns_task, timeout=5)
-            except asyncio.TimeoutError:
-                log("DNS task timed out during cancellation.", "WARNING")
+                await self.dns_task
+                log("DNS server task was cancelled gracefully.")
             except asyncio.CancelledError:
-                log("DNS task was cancelled.", "WARNING")
+                log("DNS server task was cancelled.")
 
-        # Close the HTTP server
+        # Close HTTP and DNS servers
         await self.http_server.close_server()
+        await self.dns_server.stop()
+
         log("Captive Portal stopped.")
