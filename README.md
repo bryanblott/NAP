@@ -10,7 +10,7 @@ Currently this project has been incompletely tested on ESP32 devices only.
 ## Coming Soon:
 
 - A better default HTML interface
-- Functionality to join your ESP32 existing WiFi networks and turn off AP mode
+- Functionality to join your ESP32 to existing WiFi networks and turn off AP mode
 - GPIO examples, including a reset button
 - TLS/SSL/HTTPS examples and documentation
 - Moving more functionality to config.json 
