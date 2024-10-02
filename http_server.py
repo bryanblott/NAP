@@ -37,10 +37,10 @@
 ################################################################################
 # Dependencies
 ################################################################################
-import uasyncio as asyncio
-import tls
-import gc
 import os
+import gc
+import tls
+import uasyncio as asyncio
 from logging_utility import log
 
 
@@ -48,13 +48,13 @@ from logging_utility import log
 # Code
 ################################################################################
 class HTTPServer:
-    def __init__(self, cert_file='cert.pem', key_file='private.key', index_file='index.html'):
+    def __init__(self, cert_file='cert.pem', key_file='private.key', root_directory='www'):
         self.cert_file = cert_file
         self.key_file = key_file
-        self.index_file = index_file
+        self.root_directory = root_directory
         self.server = None
         self.use_tls = self.check_tls_support()
-        self.has_index_file = self.check_index_file()
+        self.shutdown_event = asyncio.Event()  # Event to signal shutdown
 
     def check_tls_support(self):
         """Check if both the certificate and key files are present using os.stat()."""
@@ -67,54 +67,69 @@ class HTTPServer:
             log("TLS support not available: certificate and/or key files missing. Falling back to HTTP.")
             return False
 
-    def check_index_file(self):
-        """Check if the index file exists in the filesystem."""
-        try:
-            os.stat(self.index_file)
-            log(f"Index file '{self.index_file}' found. Serving it as the main page.")
-            return True
-        except OSError:
-            log(f"Index file '{self.index_file}' not found. Falling back to default HTML content.", "WARNING")
-            return False
+    def get_content_type(self, file_path):
+        """Determine the MIME type based on the file extension."""
+        if file_path.endswith('.html'):
+            return 'text/html'
+        elif file_path.endswith('.css'):
+            return 'text/css'
+        elif file_path.endswith('.js'):
+            return 'application/javascript'
+        elif file_path.endswith('.png'):
+            return 'image/png'
+        elif file_path.endswith('.jpg') or file_path.endswith('.jpeg'):
+            return 'image/jpeg'
+        elif file_path.endswith('.gif'):
+            return 'image/gif'
+        else:
+            return 'text/plain'
 
     async def handle_connection(self, reader, writer):
+        """Handle incoming HTTP connections and serve files or responses."""
         gc.collect()
         log("Handling HTTP request")
 
-        # Read the HTTP request
-        request_line = await reader.readline()
-        log(f"Request: {request_line}")
+        try:
+            # Read the HTTP request with a timeout to prevent indefinite blocking
+            request_line = await asyncio.wait_for(reader.readline(), timeout=5)  # 5-second timeout for reading request
+            log(f"Request: {request_line}")
 
-        # Serve index.html if present, otherwise serve a default HTML page
-        if b'GET /' in request_line:
-            if self.has_index_file:
-                # Serve the contents of index.html
-                try:
-                    with open(self.index_file, 'r') as file:
-                        response_body = file.read()
-                    response = 'HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n' + response_body
-                except Exception as e:
-                    # Fallback to default HTML if there's an error reading index.html
-                    log(f"Error reading {self.index_file}: {e}. Falling back to default content.", "ERROR")
-                    response = self.get_default_html_response()
-            else:
-                # Serve the default HTML page
-                response = self.get_default_html_response()
-        else:
-            response = 'HTTP/1.0 404 Not Found\r\n\r\n'
+            # Parse request and extract path
+            try:
+                path = request_line.split()[1].decode('utf-8')
+            except IndexError:
+                path = '/'
 
-        await writer.awrite(response)
-        await writer.aclose()
-        gc.collect()
+            # Serve files from root_directory or default HTML if not found
+            if path == '/':
+                path = '/index.html'  # Default to index.html
+            file_path = self.root_directory + path
 
-    def get_default_html_response(self):
-        """Return the default HTML response when index.html is not found."""
-        response = 'HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n'
-        response += "<html><head><title>ESP32 Captive Portal</title></head><body>"
-        response += "<h1>Welcome to the ESP32 Captive Portal</h1>"
-        response += "<p>You are now connected to the captive portal. Enjoy!</p>"
-        response += "</body></html>"
-        return response
+            # Try to serve the requested file
+            try:
+                with open(file_path, 'rb') as file:
+                    response_body = file.read()
+                content_type = self.get_content_type(file_path)
+                response = f'HTTP/1.0 200 OK\r\nContent-Type: {content_type}\r\n\r\n'
+                await writer.awrite(response.encode('utf-8') + response_body)
+            except OSError:
+                # Fallback to 404 if file not found
+                log(f"File not found: {file_path}. Responding with 404.", "ERROR")
+                response = 'HTTP/1.0 404 Not Found\r\n\r\n'
+                await writer.awrite(response.encode('utf-8'))
+        except asyncio.TimeoutError:
+            log("HTTP request reading timed out.", "WARNING")
+        except asyncio.CancelledError:
+            log("HTTP request handler was cancelled.", "WARNING")
+        except Exception as e:
+            log(f"General error while handling HTTP request: {e}", "ERROR")
+        finally:
+            # Ensure writer is closed properly
+            try:
+                await writer.aclose()
+            except Exception as e:
+                log(f"Error closing writer: {e}", "ERROR")
+            gc.collect()
 
     async def start(self):
         """Start the HTTP/HTTPS server depending on the availability of TLS."""
@@ -134,8 +149,16 @@ class HTTPServer:
                 log("Starting HTTP server on port 80...")
                 self.server = await asyncio.start_server(self.handle_connection, "0.0.0.0", 80)
                 log("HTTP server started on port 80.")
+
+            # Wait for the shutdown event to be triggered
+            await self.shutdown_event.wait()
+            log("Shutdown event triggered, stopping server...")
         except asyncio.CancelledError:
-            log("HTTP server task cancelled gracefully.", "WARNING")
+            log("HTTP server task was cancelled gracefully.", "WARNING")
+        except Exception as e:
+            log(f"Error starting HTTP server: {e}", "ERROR")
+        finally:
+            await self.close_server()
 
     async def close_server(self):
         """Gracefully close the HTTP/HTTPS server if it exists."""
@@ -145,3 +168,7 @@ class HTTPServer:
             await self.server.wait_closed()
             log("HTTP/HTTPS server closed successfully.")
             self.server = None
+
+    def trigger_shutdown(self):
+        """Trigger the shutdown event to stop the server."""
+        self.shutdown_event.set()

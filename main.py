@@ -28,38 +28,75 @@
 # Dependencies
 ################################################################################
 import uasyncio as asyncio
+from logging_utility import log
 from configuration import Configuration
 from captive_portal import CaptivePortal
 
-
 ################################################################################
-# Code
+# Main Execution
 ################################################################################
 
-# Helper to detect uasyncio v3
-IS_UASYNCIO_V3 = hasattr(asyncio, "__version__") and asyncio.__version__ >= (3,)
+# Global flag to ensure graceful shutdown
+shutdown_flag = False
 
-# Load configuration
-config = Configuration()
-config.load()
+# Main application entry point
+async def main():
+    global shutdown_flag
+    shutdown_flag = False  # Reset shutdown flag
 
-# Instantiate Portal and run
-portal = CaptivePortal(config.config)
+    # Load configuration
+    config = Configuration()
+    config.load()
+
+    # Create and start the captive portal
+    portal = CaptivePortal(config.config)
+    await portal.start()
+
+async def shutdown(loop, portal):
+    """Handle shutdown process for all tasks and event loop."""
+    global shutdown_flag
+
+    # Prevent multiple shutdown calls
+    if shutdown_flag:
+        log("Shutdown already in progress. Ignoring additional shutdown requests.", "WARNING")
+        return
+
+    shutdown_flag = True  # Set shutdown flag
+
+    log("Stopping Captive Portal...")
+    # Signal the portal to stop and await its completion
+    await portal.stop()
+
+    log("Closing event loop and cancelling all tasks...")
+
+    # Stop the event loop if it's still running
+    if loop:
+        loop.stop()  # Stop the loop to ensure no more tasks are scheduled
+        log("Event loop stopped.")
+
+    log("Event loop closed successfully.")
 
 try:
-    print("[INFO] Starting event loop...")
-    if IS_UASYNCIO_V3:
-        asyncio.run(portal.start())
-    else:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(portal.start())
+    log("Starting event loop...")
+    loop = asyncio.get_event_loop()
+    portal = None
 
-except Exception as e:
-    print(f"[ERROR] An exception occurred: {e}")
+    # Instantiate CaptivePortal globally to access during shutdown
+    config = Configuration()
+    config.load()
+    portal = CaptivePortal(config.config)
 
+    # Run the main function until complete
+    loop.run_until_complete(main())
 except KeyboardInterrupt:
-    print('[WARNING] Keyboard Interrupt detected. Shutting down...')
-
+    log('Keyboard Interrupt detected. Shutting down...', "WARNING")
+    if portal:
+        loop.run_until_complete(shutdown(loop, portal))
 finally:
-    if IS_UASYNCIO_V3:
-        asyncio.run(portal.stop())  # Ensure all servers are closed
+    # Final cleanup
+    if portal:
+        log("Final cleanup: Stopping the Captive Portal if not already stopped.")
+        loop.run_until_complete(portal.stop())
+
+    log("Application shutdown completed.")
+
