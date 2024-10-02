@@ -28,9 +28,10 @@
 # Dependencies
 ################################################################################
 import uasyncio as asyncio
-from logging_utility import log
+import machine  # Import machine module to use reset functionality
 from configuration import Configuration
 from captive_portal import CaptivePortal
+from logging_utility import log
 
 ################################################################################
 # Main Execution
@@ -100,3 +101,6 @@ finally:
 
     log("Application shutdown completed.")
 
+    # Reboot the ESP32 as the final cleanup action
+    log("Rebooting the ESP32 to complete the shutdown process...", "INFO")
+    machine.reset()  # Perform a hard reset to reboot the ESP32
