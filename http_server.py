@@ -31,28 +31,38 @@
 #
 #     async close_server(self):
 #         Gracefully closes the HTTP/HTTPS server if it exists.
+#
+#     update_server_ip(self, new_ip):
+#         Updates the IP address for the server and restarts it with the new IP.
+#
+#     restart_server(self):
+#         Restarts the HTTP server with the updated IP address.
 ################################################################################
-
 
 ################################################################################
 # Dependencies
 ################################################################################
+import uasyncio as asyncio
 import os
+import json
 import gc
 import tls
-import uasyncio as asyncio
-from logging_utility import log
+from logging_utility import get_logger
+
+# Setup logging
+logger = get_logger("HTTPServer")
 
 
-################################################################################
-# Code
-################################################################################
 class HTTPServer:
-    def __init__(self, cert_file='cert.pem', key_file='private.key', root_directory='www'):
+    def __init__(self, cert_file='cert.pem', key_file='private.key', root_directory='www', host="0.0.0.0", port=80, wifi_client=None):
         self.cert_file = cert_file
         self.key_file = key_file
         self.root_directory = root_directory
+        self.host = host
+        self.port = port
         self.server = None
+        self.server_ip = host
+        self.wifi_client = wifi_client
         self.use_tls = self.check_tls_support()
         self.shutdown_event = asyncio.Event()  # Event to signal shutdown
 
@@ -61,10 +71,10 @@ class HTTPServer:
         try:
             os.stat(self.cert_file)
             os.stat(self.key_file)
-            log("TLS support available: certificate and key files found.")
+            logger.info("TLS support available: certificate and key files found.")
             return True
         except OSError:
-            log("TLS support not available: certificate and/or key files missing. Falling back to HTTP.")
+            logger.warning("TLS support not available: certificate and/or key files missing. Falling back to HTTP.")
             return False
 
     def get_content_type(self, file_path):
@@ -87,12 +97,11 @@ class HTTPServer:
     async def handle_connection(self, reader, writer):
         """Handle incoming HTTP connections and serve files or responses."""
         gc.collect()
-        log("Handling HTTP request")
+        logger.info("Handling HTTP request")
 
         try:
-            # Read the HTTP request with a timeout to prevent indefinite blocking
             request_line = await asyncio.wait_for(reader.readline(), timeout=5)  # 5-second timeout for reading request
-            log(f"Request: {request_line}")
+            logger.info(f"Request: {request_line}")
 
             # Parse request and extract path
             try:
@@ -100,75 +109,117 @@ class HTTPServer:
             except IndexError:
                 path = '/'
 
-            # Serve files from root_directory or default HTML if not found
-            if path == '/':
-                path = '/index.html'  # Default to index.html
-            file_path = self.root_directory + path
-
-            # Try to serve the requested file
-            try:
-                with open(file_path, 'rb') as file:
-                    response_body = file.read()
-                content_type = self.get_content_type(file_path)
-                response = f'HTTP/1.0 200 OK\r\nContent-Type: {content_type}\r\n\r\n'
-                await writer.awrite(response.encode('utf-8') + response_body)
-            except OSError:
-                # Fallback to 404 if file not found
-                log(f"File not found: {file_path}. Responding with 404.", "ERROR")
-                response = 'HTTP/1.0 404 Not Found\r\n\r\n'
-                await writer.awrite(response.encode('utf-8'))
+            # Handle requests to /scan and /connect
+            if path == "/scan":
+                await self.handle_scan_request(writer)
+            elif path == "/connect":
+                await self.handle_connect_request(reader, writer)
+            else:
+                await self.serve_static_file(writer, path)
         except asyncio.TimeoutError:
-            log("HTTP request reading timed out.", "WARNING")
+            logger.warning("HTTP request reading timed out.")
         except asyncio.CancelledError:
-            log("HTTP request handler was cancelled.", "WARNING")
+            logger.warning("HTTP request handler was cancelled.")
         except Exception as e:
-            log(f"General error while handling HTTP request: {e}", "ERROR")
+            logger.error(f"General error while handling HTTP request: {e}")
         finally:
             # Ensure writer is closed properly
             try:
                 await writer.aclose()
             except Exception as e:
-                log(f"Error closing writer: {e}", "ERROR")
+                logger.error(f"Error closing writer: {e}")
             gc.collect()
+
+    async def handle_scan_request(self, writer):
+        """Handle requests to scan for Wi-Fi networks."""
+        if self.wifi_client:
+            networks = await self.wifi_client.scan_networks()
+            response = json.dumps(networks)
+            logger.info(f"Scanned Wi-Fi Networks: {response}")
+            await self.send_response(writer, response, content_type="application/json")
+        else:
+            logger.error("WiFiClient instance not found. Cannot scan networks.")
+            await self.send_response(writer, '{"error": "WiFiClient not available"}', content_type="application/json")
+
+    async def handle_connect_request(self, reader, writer):
+        """Handle requests to connect to a Wi-Fi network."""
+        if not self.wifi_client:
+            logger.error("WiFiClient instance not found. Cannot connect to networks.")
+            await self.send_response(writer, '{"error": "WiFiClient not available"}', content_type="application/json")
+            return
+
+        content_length = 0
+        while True:
+            header_line = await reader.readline()
+            if header_line.startswith(b'Content-Length'):
+                content_length = int(header_line.decode().split(":")[1].strip())
+            if header_line == b'\r\n':
+                break
+
+        post_data = await reader.read(content_length)
+        ssid, password = self.parse_post_data(post_data)
+        success = await self.wifi_client.connect_to_network(ssid, password)
+        response = "Connection successful" if success else "Connection failed"
+        logger.info(response)
+        await self.send_response(writer, response)
+
+    async def serve_static_file(self, writer, path):
+        """Serve static files from the root directory."""
+        if path == "/":
+            path = "/index.html"
+        file_path = f"{self.root_directory}{path}"
+        try:
+            with open(file_path, 'rb') as file:
+                response_body = file.read()
+            content_type = self.get_content_type(file_path)
+            response = f'HTTP/1.0 200 OK\r\nContent-Type: {content_type}\r\n\r\n'
+            await writer.awrite(response.encode('utf-8') + response_body)
+        except OSError:
+            logger.error(f"File not found: {file_path}. Responding with 404.")
+            response = 'HTTP/1.0 404 Not Found\r\n\r\n<h1>404 Not Found</h1>'
+            await writer.awrite(response.encode('utf-8'))
+
+    async def send_response(self, writer, response_body, content_type="text/plain"):
+        """Send an HTTP response with the specified content."""
+        response = f'HTTP/1.0 200 OK\r\nContent-Type: {content_type}\r\n\r\n'
+        await writer.awrite(response.encode('utf-8') + response_body.encode('utf-8'))
 
     async def start(self):
         """Start the HTTP/HTTPS server depending on the availability of TLS."""
         try:
             if self.use_tls:
-                # Create an SSL context and start HTTPS server
                 context = tls.SSLContext(tls.PROTOCOL_TLS_SERVER)
                 context.load_cert_chain(self.cert_file, self.key_file)
-                log("Creating TLS wrapped socket...")
-
-                # Start the HTTPS server
-                log("Starting HTTPS server on port 443...")
-                self.server = await asyncio.start_server(self.handle_connection, "0.0.0.0", 443, ssl=context)
-                log("HTTPS server started on port 443.")
+                logger.info("Starting HTTPS server on port 443...")
+                self.server = await asyncio.start_server(self.handle_connection, self.host, 443, ssl=context)
+                logger.info("HTTPS server started.")
             else:
-                # Start a plain HTTP server
-                log("Starting HTTP server on port 80...")
-                self.server = await asyncio.start_server(self.handle_connection, "0.0.0.0", 80)
-                log("HTTP server started on port 80.")
+                logger.info(f"Starting HTTP server on {self.host}:{self.port}...")
+                self.server = await asyncio.start_server(self.handle_connection, self.host, self.port)
+                logger.info(f"HTTP server started on {self.host}:{self.port}.")
 
-            # Wait for the shutdown event to be triggered
             await self.shutdown_event.wait()
-            log("Shutdown event triggered, stopping server...")
         except asyncio.CancelledError:
-            log("HTTP server task was cancelled gracefully.", "WARNING")
+            logger.warning("HTTP server task was cancelled gracefully.")
         except Exception as e:
-            log(f"Error starting HTTP server: {e}", "ERROR")
-        finally:
-            await self.close_server()
+            logger.error(f"Error starting HTTP server: {e}")
 
-    async def close_server(self):
-        """Gracefully close the HTTP/HTTPS server if it exists."""
+    async def stop(self):
+        """Stop the HTTP server gracefully."""
         if self.server:
-            log("Closing HTTP/HTTPS server...")
+            logger.info("Stopping HTTP server...")
             self.server.close()
             await self.server.wait_closed()
-            log("HTTP/HTTPS server closed successfully.")
+            logger.info("HTTP server stopped successfully.")
             self.server = None
 
-    def trigger_shutdown(self):
-        """Trigger the shutdown event to stop the server."""
-        self.shutdown_event.set()
+    async def restart_server(self):
+        """Restart the HTTP server to apply new configurations or IP address changes."""
+        await self.stop()
+        await self.start()
+
+    def update_server_ip(self, new_ip):
+        """Update the IP address for the server and restart it with the new IP."""
+        self.host = new_ip
+        asyncio.create_task(self.restart_server())
+

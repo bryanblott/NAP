@@ -27,80 +27,102 @@
 ################################################################################
 # Dependencies
 ################################################################################
+# main.py
+
 import uasyncio as asyncio
-import machine  # Import machine module to use reset functionality
 from configuration import Configuration
 from captive_portal import CaptivePortal
-from logging_utility import log
+from wifi_client import WiFiClient
+from http_server import HTTPServer
+import logging_utility
 
-################################################################################
-# Main Execution
-################################################################################
+# Setup logging using the new Logger class
+logger = logging_utility.get_logger("Main")
 
-# Global flag to ensure graceful shutdown
-shutdown_flag = False
+# Print the type of the logger to confirm it's an instance of the Logger class
+print(f"Logger Type after initialization: {type(logger)}")  # Should print <class 'logging_utility.Logger'>
 
-# Main application entry point
+# Global variables to hold instances of CaptivePortal, WiFiClient, and HTTPServer
+captive_portal_instance = None
+wifi_client_instance = None
+http_server_instance = None
+
+async def start_captive_portal():
+    """Start the captive portal and keep it running."""
+    global captive_portal_instance, wifi_client_instance, http_server_instance
+
+    logger.info("Loading configuration...")
+    config = Configuration()  # Create a configuration object
+    config.load()  # Ensure the configuration is loaded properly
+    logger.info("Configuration loaded successfully.")
+
+    # Access configuration data through config.config
+    ssid = config.get("ssid")
+    password = config.get("password")
+    server_ip = config.get("server_ip")
+
+    logger.info(f"Configuration values: SSID={ssid}, Password={password}, Server IP={server_ip}")
+
+    # Create and start the Captive Portal
+    logger.info("Creating Captive Portal instance...")
+    captive_portal_instance = CaptivePortal(config.config)  # Pass config.config, not config itself
+    await captive_portal_instance.start()
+    logger.info("Captive Portal started successfully.")
+
+    # Create a WiFi Client instance
+    logger.info("Creating WiFiClient instance...")
+    wifi_client_instance = WiFiClient()
+    logger.info("WiFiClient instance created successfully.")
+
+    # Create an HTTP Server instance with the WiFiClient instance
+    logger.info("Creating HTTPServer instance with WiFiClient...")
+    http_server_instance = HTTPServer("0.0.0.0", 80, wifi_client_instance)
+    logger.info("HTTPServer instance created successfully.")
+
+    # Ensure the HTTP server starts
+    await http_server_instance.start()
+
+async def shutdown_captive_portal():
+    """Gracefully shutdown the Captive Portal and related services."""
+    global captive_portal_instance, wifi_client_instance, http_server_instance
+
+    logger.info("Shutting down Captive Portal...")
+
+    if http_server_instance:
+        logger.info("Stopping HTTP Server...")
+        await http_server_instance.stop()
+        logger.info("HTTP Server stopped.")
+
+    if captive_portal_instance:
+        logger.info("Stopping Captive Portal...")
+        await captive_portal_instance.stop()
+        logger.info("Captive Portal stopped.")
+
+    # Reset global variables
+    captive_portal_instance = None
+    wifi_client_instance = None
+    http_server_instance = None
+
+    logger.info("Captive Portal shutdown completed successfully.")
+
 async def main():
-    global shutdown_flag
-    shutdown_flag = False  # Reset shutdown flag
+    """Main function to run and later shut down the captive portal."""
+    try:
+        await start_captive_portal()
+    except Exception as e:
+        logger.error(f"An error occurred: {e}")
+    finally:
+        await shutdown_captive_portal()
+        logger.info("Event loop closed.")
 
-    # Load configuration
-    config = Configuration()
-    config.load()
-
-    # Create and start the captive portal
-    portal = CaptivePortal(config.config)
-    await portal.start()
-
-async def shutdown(loop, portal):
-    """Handle shutdown process for all tasks and event loop."""
-    global shutdown_flag
-
-    # Prevent multiple shutdown calls
-    if shutdown_flag:
-        log("Shutdown already in progress. Ignoring additional shutdown requests.", "WARNING")
-        return
-
-    shutdown_flag = True  # Set shutdown flag
-
-    log("Stopping Captive Portal...")
-    # Signal the portal to stop and await its completion
-    await portal.stop()
-
-    log("Closing event loop and cancelling all tasks...")
-
-    # Stop the event loop if it's still running
-    if loop:
-        loop.stop()  # Stop the loop to ensure no more tasks are scheduled
-        log("Event loop stopped.")
-
-    log("Event loop closed successfully.")
-
-try:
-    log("Starting event loop...")
+# Run the main function using asyncio
+if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    portal = None
-
-    # Instantiate CaptivePortal globally to access during shutdown
-    config = Configuration()
-    config.load()
-    portal = CaptivePortal(config.config)
-
-    # Run the main function until complete
-    loop.run_until_complete(main())
-except KeyboardInterrupt:
-    log('Keyboard Interrupt detected. Shutting down...', "WARNING")
-    if portal:
-        loop.run_until_complete(shutdown(loop, portal))
-finally:
-    # Final cleanup
-    if portal:
-        log("Final cleanup: Stopping the Captive Portal if not already stopped.")
-        loop.run_until_complete(portal.stop())
-
-    log("Application shutdown completed.")
-
-    # Reboot the ESP32 as the final cleanup action
-    log("Rebooting the ESP32 to complete the shutdown process...", "INFO")
-    machine.reset()  # Perform a hard reset to reboot the ESP32
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        logger.info("Application interrupted manually.")
+        loop.run_until_complete(shutdown_captive_portal())
+    finally:
+        loop.close()
+        logger.info("Application terminated.")

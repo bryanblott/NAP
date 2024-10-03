@@ -24,10 +24,13 @@
 # Dependencies
 ################################################################################
 import uasyncio as asyncio
-from logging_utility import log
-from http_server import HTTPServer
-from dns_server import DNSServer
 from wifi_access_point import WiFiAccessPoint
+from dns_server import DNSServer
+from http_server import HTTPServer
+from logging_utility import get_logger
+
+# Create a logger for this module
+logger = get_logger("CaptivePortal")
 
 
 ################################################################################
@@ -35,58 +38,63 @@ from wifi_access_point import WiFiAccessPoint
 ################################################################################
 class CaptivePortal:
     def __init__(self, config):
-        self.wifi_ap = WiFiAccessPoint(config["ssid"], config["password"])
-        self.dns_server = DNSServer(config["server_ip"])
-        self.http_server = HTTPServer()
-        self.dns_task = None
-        self.http_task = None
-
+        """Initialize the CaptivePortal with the given configuration."""
+        self.config = config
+        self.wifi_ap = WiFiAccessPoint(self.config['ssid'], self.config['password'])
+        self.dns_server = DNSServer(self.config['server_ip'])
+        self.http_server = HTTPServer(self.config['server_ip'], 80)
+    
     async def start(self):
-        """Start the captive portal with DNS and HTTP services."""
-        log("Starting Captive Portal...")
-        # Start Wi-Fi Access Point
-        self.wifi_ap.start()
-
-        # Start DNS and HTTP servers
-        log("Starting DNS and HTTP servers in parallel...")
-        self.dns_task = asyncio.create_task(self.dns_server.start())
-        self.http_task = asyncio.create_task(self.http_server.start())
-
-        # Enable the watchdog timer
-        # log("Watchdog timer enabled.")
-
+        """Start the captive portal services: Wi-Fi AP, DNS server, and HTTP server."""
+        try:
+            logger.info("Starting Captive Portal...")
+            self.wifi_ap.start()
+            await asyncio.gather(
+                self.dns_server.start(),
+                self.http_server.start()
+            )
+            logger.info("Captive Portal started successfully.")
+        except Exception as e:
+            logger.error(f"Failed to start Captive Portal services: {e}")
+    
+    async def stop(self):
+        """Stop the captive portal services."""
+        try:
+            logger.info("Stopping Captive Portal...")
+            await asyncio.gather(
+                self.wifi_ap.stop(),
+                self.dns_server.stop(),
+                self.http_server.stop()
+            )
+            logger.info("Captive Portal stopped successfully.")
+        except Exception as e:
+            logger.error(f"Failed to stop Captive Portal services: {e}")
+    
+    async def run_forever(self):
+        """Keep the captive portal running indefinitely."""
         try:
             while True:
-                await asyncio.sleep(5)  # Main loop to keep running
+                await asyncio.sleep(3600)  # Sleep for 1 hour
         except asyncio.CancelledError:
-            log("Captive Portal main task cancelled.")
+            logger.warning("Captive Portal run_forever task was cancelled.")
+            await self.stop()
 
-    async def stop(self):
-        """Stop all services and cancel tasks."""
-        log("Stopping Captive Portal...")
-
-        # Cancel HTTP server task
-        if self.http_task:
-            log("Cancelling HTTP server task...")
-            self.http_task.cancel()
-            try:
-                await self.http_task
-                log("HTTP server task was cancelled gracefully.")
-            except asyncio.CancelledError:
-                log("HTTP server task was cancelled.")
-
-        # Cancel DNS server task
-        if self.dns_task:
-            log("Cancelling DNS server task...")
-            self.dns_task.cancel()
-            try:
-                await self.dns_task
-                log("DNS server task was cancelled gracefully.")
-            except asyncio.CancelledError:
-                log("DNS server task was cancelled.")
-
-        # Close HTTP and DNS servers
-        await self.http_server.close_server()
-        await self.dns_server.stop()
-
-        log("Captive Portal stopped.")
+if __name__ == "__main__":
+    # Example configuration dictionary
+    config = {
+        'ssid': 'ESP32-Captive-Portal',
+        'password': '123456789',
+        'server_ip': '192.168.4.1'
+    }
+    
+    cp = CaptivePortal(config)
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(cp.start())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Manual interruption received.")
+    finally:
+        loop.run_until_complete(cp.stop())
+        loop.close()
+        logger.info("Captive Portal process exited gracefully.")

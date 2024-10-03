@@ -18,8 +18,11 @@
 # Dependencies
 ################################################################################
 import socket
-import uasyncio as asyncio # type: ignore
-from logging_utility import log
+import uasyncio as asyncio
+from logging_utility import get_logger
+
+# Create a logger for the DNS server
+logger = get_logger("DNSServer")
 
 
 ################################################################################
@@ -36,25 +39,21 @@ class DNSQuery:
         state = 0
         expected_length = 0
         domain_parts = []
-        try:
-            for byte in self.data[12:]:
-                if state == 1:
-                    if byte == 0:
-                        break
-                    domain_parts.append(chr(byte))
-                    expected_length -= 1
-                    if expected_length == 0:
-                        domain_parts.append('.')
-                        state = 0
-                else:
-                    expected_length = byte
-                    if expected_length == 0:
-                        break
-                    state = 1
-            self.domain = ''.join(domain_parts).strip('.')
-        except Exception as e:
-            log(f"Error parsing domain: {e}", "ERROR")
-            self.domain = ''  # Reset domain in case of error
+        for byte in self.data[12:]:
+            if state == 1:
+                if byte == 0:
+                    break
+                domain_parts.append(chr(byte))
+                expected_length -= 1
+                if expected_length == 0:
+                    domain_parts.append('.')
+                    state = 0
+            else:
+                expected_length = byte
+                if expected_length == 0:
+                    break
+                state = 1
+        self.domain = ''.join(domain_parts).strip('.')
 
     def response(self, ip):
         """Generate a response for the given IP address"""
@@ -68,9 +67,8 @@ class DNSQuery:
 
             return packet
         except Exception as e:
-            log(f"Error creating DNS response: {e}", "ERROR")
+            logger.error(f"Error creating DNS response: {e}")
             return b''  # Return empty response in case of error
-
 
 class DNSServer:
     def __init__(self, server_ip="192.168.4.1"):
@@ -78,10 +76,6 @@ class DNSServer:
         self.udps = None
         self._running = False
         self.lock = asyncio.Lock()
-
-    async def run(self):
-        """Run the DNS server to handle incoming DNS requests"""
-        await self.start()
 
     async def start(self):
         """Start the DNS server to handle incoming DNS requests"""
@@ -91,19 +85,19 @@ class DNSServer:
         self.udps.setblocking(False)
         try:
             self.udps.bind(('0.0.0.0', 53))
-            log("DNS server started on port 53")
+            logger.info("DNS server started on port 53")
             
             while self._running:
                 try:
                     await self.handle_dns(self.udps)
                 except asyncio.CancelledError:
-                    log("DNS server task cancelled, shutting down...", "WARNING")
+                    logger.warning("DNS server task cancelled, shutting down...")
                     break
                 except Exception as e:
-                    log(f"Error handling DNS query: {e}", "ERROR")
+                    logger.error(f"Error handling DNS query: {e}")
                     await asyncio.sleep(1)
         except OSError as e:
-            log(f"Failed to bind DNS server on port 53: {e}", "ERROR")
+            logger.error(f"Failed to bind DNS server on port 53: {e}")
             raise
         finally:
             await self.stop_internal()
@@ -117,13 +111,13 @@ class DNSServer:
                     return
 
                 DNS = DNSQuery(data)
-                log(f"Received DNS query for domain: {DNS.domain}")
+                logger.info(f"Received DNS query for domain: {DNS.domain}")
 
                 if DNS.domain:
                     sock.sendto(DNS.response(self.server_ip), addr)
-                    log(f"Replying: {DNS.domain} -> {self.server_ip}")
+                    logger.info(f"Replying: {DNS.domain} -> {self.server_ip}")
                 else:
-                    log("Invalid or empty domain received, ignoring...", "WARNING")
+                    logger.warning("Invalid or empty domain received, ignoring...")
 
             except asyncio.CancelledError:
                 await asyncio.sleep(0)
@@ -132,28 +126,19 @@ class DNSServer:
                 if e.args[0] == 11:  # EAGAIN or no data received yet
                     await asyncio.sleep(0)
                 else:
-                    log(f"Unexpected error in DNS handling: {e}", "ERROR")
+                    logger.error(f"Unexpected error in DNS handling: {e}")
                     raise
             except Exception as e:
-                log(f"General error in DNS handling: {e}", "ERROR")
+                logger.error(f"General error in DNS handling: {e}")
                 await asyncio.sleep(1)
 
     async def stop(self):
         """Stop the DNS server and release resources"""
-        log("Stopping DNS server internal loop...")
+        logger.info("Stopping DNS server internal loop...")
         self._running = False
         if self.udps:
-            log("Closing DNS server socket...")
+            logger.info("Closing DNS server socket...")
             self.udps.close()
             self.udps = None
-            log("DNS server socket closed.")
+            logger.info("DNS server socket closed.")
         await asyncio.sleep(0.1)
-
-    async def stop_internal(self):
-        """Internal stop method for cleanup and graceful shutdown"""
-        if self.udps:
-            log("Closing DNS server socket from internal stop...")
-            self.udps.close()
-            self.udps = None
-            log("DNS server socket closed from internal stop.")
-        log("DNS server internal loop stopped.")

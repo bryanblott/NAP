@@ -21,31 +21,70 @@
 ################################################################################
 # Dependencies
 ################################################################################
-import network 
-import time
-from logging_utility import log
+from network import WLAN, AP_IF
+import uasyncio as asyncio
+from logging_utility import get_logger
 
+# Create a logger for this module
+logger = get_logger("WiFiAccessPoint")
 
 ################################################################################
 # Code
 ################################################################################
 class WiFiAccessPoint:
-    def __init__(self, ssid="ESP32_Captive_Portal", password="12345678"):
+    def __init__(self, ssid, password):
+        """Initialize the WiFi access point with given SSID and password."""
         self.ssid = ssid
         self.password = password
-        self.ap = network.WLAN(network.AP_IF)
+        self.wlan = WLAN(AP_IF)
+        self.wlan.active(True)
+        self.wlan.config(essid=self.ssid, password=self.password, authmode=3)
 
     def start(self):
-        """Start the Wi-Fi access point"""
-        self.ap.active(True)
-        self.ap.config(essid=self.ssid, password=self.password)
-        log(f"Access Point {self.ssid} started")
+        """Start the WiFi Access Point."""
+        try:
+            if not self.wlan.active():
+                self.wlan.active(True)
+            self.wlan.config(essid=self.ssid, password=self.password, authmode=3)
+            logger.info("WiFi Access Point started successfully.")
+        except Exception as e:
+            logger.error(f"Failed to start WiFi Access Point: {e}")
 
-        # Wait until the AP gets an IP address
-        while not self.ap.active():
-            log("Waiting for AP to become active...", "WARNING")
-            time.sleep(1)
+    def stop(self):
+        """Stop the WiFi Access Point."""
+        try:
+            self.wlan.active(False)
+            logger.info("WiFi Access Point stopped successfully.")
+        except Exception as e:
+            logger.error(f"Failed to stop WiFi Access Point: {e}")
 
-        # Print the AP's IP address configuration
-        ap_ip = self.ap.ifconfig()
-        log(f"AP IP configuration: {ap_ip}")
+    async def monitor(self):
+        """Monitor the status of the WiFi Access Point."""
+        try:
+            while True:
+                if self.wlan.active():
+                    logger.info("WiFi Access Point is active.")
+                else:
+                    logger.warning("WiFi Access Point is not active.")
+                await asyncio.sleep(60)  # Check every minute
+        except asyncio.CancelledError:
+            logger.warning("WiFi Access Point monitoring task was cancelled.")
+        except Exception as e:
+            logger.error(f"Error during WiFi Access Point monitoring: {e}")
+
+if __name__ == "__main__":
+    # Create an instance with example credentials
+    ap = WiFiAccessPoint("ExampleSSID", "securepassword123")
+    ap.start()
+    
+    # Start monitoring in an event loop for demonstration purposes
+    loop = asyncio.get_event_loop()
+    loop.create_task(ap.monitor())
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Manual interruption received.")
+        ap.stop()
+    finally:
+        loop.close()
+        logger.info("WiFi Access Point process exited gracefully.")
