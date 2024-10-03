@@ -36,32 +36,40 @@ class DNSQuery:
         state = 0
         expected_length = 0
         domain_parts = []
-        for byte in self.data[12:]:
-            if state == 1:
-                if byte == 0:
-                    break
-                domain_parts.append(chr(byte))
-                expected_length -= 1
-                if expected_length == 0:
-                    domain_parts.append('.')
-                    state = 0
-            else:
-                expected_length = byte
-                if expected_length == 0:
-                    break
-                state = 1
-        self.domain = ''.join(domain_parts).strip('.')
+        try:
+            for byte in self.data[12:]:
+                if state == 1:
+                    if byte == 0:
+                        break
+                    domain_parts.append(chr(byte))
+                    expected_length -= 1
+                    if expected_length == 0:
+                        domain_parts.append('.')
+                        state = 0
+                else:
+                    expected_length = byte
+                    if expected_length == 0:
+                        break
+                    state = 1
+            self.domain = ''.join(domain_parts).strip('.')
+        except Exception as e:
+            log(f"Error parsing domain: {e}", "ERROR")
+            self.domain = ''  # Reset domain in case of error
 
     def response(self, ip):
         """Generate a response for the given IP address"""
-        packet = self.data[:2] + b'\x81\x80'
-        packet += self.data[4:6] + self.data[4:6] + b'\x00\x00\x00\x00'  # Questions and Answers Counts
-        packet += self.data[12:]  # Original Domain Name Question
-        packet += b'\xc0\x0c'  # Pointer to domain name
-        packet += b'\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04'  # Response type, ttl and resource data length -> 4 bytes
-        packet += bytes(map(int, ip.split('.')))  # 4 bytes of IP
+        try:
+            packet = self.data[:2] + b'\x81\x80'
+            packet += self.data[4:6] + self.data[4:6] + b'\x00\x00\x00\x00'  # Questions and Answers Counts
+            packet += self.data[12:]  # Original Domain Name Question
+            packet += b'\xc0\x0c'  # Pointer to domain name
+            packet += b'\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04'  # Response type, ttl and resource data length -> 4 bytes
+            packet += bytes(map(int, ip.split('.')))  # 4 bytes of IP
 
-        return packet
+            return packet
+        except Exception as e:
+            log(f"Error creating DNS response: {e}", "ERROR")
+            return b''  # Return empty response in case of error
 
 
 class DNSServer:
@@ -69,22 +77,21 @@ class DNSServer:
         self.server_ip = server_ip
         self.udps = None
         self._running = False
-        self.lock = asyncio.Lock()  # Lock for concurrent DNS access
+        self.lock = asyncio.Lock()
 
     async def run(self):
         """Run the DNS server to handle incoming DNS requests"""
-        await self.start()  # Call the start method to run the DNS server
+        await self.start()
 
     async def start(self):
         """Start the DNS server to handle incoming DNS requests"""
         self._running = True
         self.udps = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.udps.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow address reuse
-        self.udps.setblocking(False)  # Set the socket to non-blocking mode
+        self.udps.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.udps.setblocking(False)
         try:
             self.udps.bind(('0.0.0.0', 53))
             log("DNS server started on port 53")
-            log("DNS handling loop started.")
             
             while self._running:
                 try:
@@ -105,19 +112,25 @@ class DNSServer:
         """Handle DNS requests with a polling approach and controlled access"""
         async with self.lock:
             try:
-                # Try receiving data from the socket, non-blocking
                 data, addr = sock.recvfrom(4096)
+                if not data:
+                    return
+
                 DNS = DNSQuery(data)
                 log(f"Received DNS query for domain: {DNS.domain}")
-                sock.sendto(DNS.response(self.server_ip), addr)
-                log(f"Replying: {DNS.domain} -> {self.server_ip}")
+
+                if DNS.domain:
+                    sock.sendto(DNS.response(self.server_ip), addr)
+                    log(f"Replying: {DNS.domain} -> {self.server_ip}")
+                else:
+                    log("Invalid or empty domain received, ignoring...", "WARNING")
+
             except asyncio.CancelledError:
-                log("DNS handling task cancelled gracefully.", "WARNING")
-                await asyncio.sleep(0)  # Yield control to allow clean exit
+                await asyncio.sleep(0)
                 return
             except OSError as e:
                 if e.args[0] == 11:  # EAGAIN or no data received yet
-                    await asyncio.sleep(0)  # Yield control back to the event loop
+                    await asyncio.sleep(0)
                 else:
                     log(f"Unexpected error in DNS handling: {e}", "ERROR")
                     raise
@@ -134,7 +147,7 @@ class DNSServer:
             self.udps.close()
             self.udps = None
             log("DNS server socket closed.")
-        await asyncio.sleep(0.1)  # Ensure socket closure is processed
+        await asyncio.sleep(0.1)
 
     async def stop_internal(self):
         """Internal stop method for cleanup and graceful shutdown"""

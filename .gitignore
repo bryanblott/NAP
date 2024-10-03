@@ -1,6 +1,5 @@
 security.local
 security.py
 *.code-workspace
-pymakr.conf
 config.json
 .DS_Store
