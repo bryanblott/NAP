@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html>
 <head>
@@ -6,7 +7,22 @@
 </head>
 <body>
     <h1>Welcome to the ESP32 Captive Portal</h1>
-    <p>You are now connected to the captive portal. Enjoy!</p>
+    <p>Select a Wi-Fi network and enter the password to connect:</p>
+
+    <form id="wifi-form">
+        <label for="networks">Available Networks:</label>
+        <select id="networks" name="networks">
+            <!-- Wi-Fi networks will be populated here by JavaScript -->
+        </select>
+        <br><br>
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password">
+        <br><br>
+        <button type="button" onclick="connectToWiFi()">Connect</button>
+    </form>
+
+    <div id="status"></div>
+
     <script src="script.js"></script>
 </body>
 </html>
