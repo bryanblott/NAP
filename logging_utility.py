@@ -1,19 +1,20 @@
+
 ################################################################################
-# This module provides a simple Logger class with methods like `info`, `error`,
-# and `warning` to print messages with different severity levels.
+# This module provides a basic Logger class for logging messages in MicroPython.
+# Methods like `info`, `error`, and `warning` are provided to print messages
+# with different severity levels.
 ################################################################################
 
-print("Initializing logging_utility.py")  # Add this line at the top
+import sys
 
 class Logger:
     """Simple Logger class to encapsulate logging functionality."""
-    
     def __init__(self, name=None):
         self.name = name
 
     def _log(self, message, level="INFO"):
         """Log a message with a specific severity level."""
-        print(f"[{level}] {message}")
+        print("[{}] {}: {}".format(level, self.name if self.name else '', message), file=sys.stderr)
 
     def info(self, message):
         self._log(message, "INFO")
@@ -24,6 +25,6 @@ class Logger:
     def error(self, message):
         self._log(message, "ERROR")
 
-def get_logger(name=None):
-    """Return an instance of the Logger class."""
+# Function to create a new logger instance
+def create_logger(name=None):
     return Logger(name)

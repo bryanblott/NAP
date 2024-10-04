@@ -47,10 +47,10 @@ import os
 import json
 import gc
 import tls
-from logging_utility import get_logger
+from logging_utility import create_logger
 
 # Setup logging
-logger = get_logger("HTTPServer")
+logger = create_logger("HTTPServer")
 
 
 class HTTPServer:
@@ -222,4 +222,3 @@ class HTTPServer:
         """Update the IP address for the server and restart it with the new IP."""
         self.host = new_ip
         asyncio.create_task(self.restart_server())
-

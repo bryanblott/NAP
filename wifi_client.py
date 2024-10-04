@@ -23,10 +23,10 @@
 ################################################################################
 import network
 import uasyncio as asyncio
-from logging_utility import get_logger
+from logging_utility import create_logger
 
 # Create a logger for this module
-logger = get_logger("WiFiClient")
+logger = create_logger("WiFiClient")
 
 ################################################################################
 # Code
@@ -82,4 +82,3 @@ if __name__ == "__main__":
     loop.run_until_complete(test_connection())
     loop.close()
     logger.info("WiFi client test completed.")
-

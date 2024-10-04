@@ -34,10 +34,10 @@ from configuration import Configuration
 from captive_portal import CaptivePortal
 from wifi_client import WiFiClient
 from http_server import HTTPServer
-import logging_utility
+from logging_utility import create_logger
 
 # Setup logging using the new Logger class
-logger = logging_utility.get_logger("Main")
+logger = create_logger("Main")
 
 # Print the type of the logger to confirm it's an instance of the Logger class
 print(f"Logger Type after initialization: {type(logger)}")  # Should print <class 'logging_utility.Logger'>

@@ -19,10 +19,10 @@
 ################################################################################
 import socket
 import uasyncio as asyncio
-from logging_utility import get_logger
+from logging_utility import create_logger
 
 # Create a logger for the DNS server
-logger = get_logger("DNSServer")
+logger = create_logger("DNSServer")
 
 
 ################################################################################

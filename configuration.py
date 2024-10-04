@@ -21,10 +21,10 @@
 ################################################################################
 import json
 import os
-from logging_utility import get_logger
+from logging_utility import create_logger
 
 # Create a logger for this module
-logger = get_logger("Configuration")
+logger = create_logger("Configuration")
 
 
 ################################################################################
@@ -115,7 +115,6 @@ class Configuration:
 if __name__ == "__main__":
     config = Configuration()
     config.display()  # Display current configuration values
-
 
 
 

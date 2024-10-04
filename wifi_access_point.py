@@ -23,10 +23,10 @@
 ################################################################################
 from network import WLAN, AP_IF
 import uasyncio as asyncio
-from logging_utility import get_logger
+from logging_utility import create_logger
 
 # Create a logger for this module
-logger = get_logger("WiFiAccessPoint")
+logger = create_logger("WiFiAccessPoint")
 
 ################################################################################
 # Code
@@ -36,7 +36,8 @@ class WiFiAccessPoint:
         """Initialize the WiFi access point with given SSID and password."""
         self.ssid = ssid
         self.password = password
-        self.wlan = WLAN(AP_IF)
+        from wifi_helper import initialize_wifi_interface
+        self.wlan = initialize_wifi_interface(AP_IF)
         self.wlan.active(True)
         self.wlan.config(essid=self.ssid, password=self.password, authmode=3)
 
@@ -50,7 +51,7 @@ class WiFiAccessPoint:
         except Exception as e:
             logger.error(f"Failed to start WiFi Access Point: {e}")
 
-    def stop(self):
+    async def stop(self):
         """Stop the WiFi Access Point."""
         try:
             self.wlan.active(False)

@@ -27,10 +27,10 @@ import uasyncio as asyncio
 from wifi_access_point import WiFiAccessPoint
 from dns_server import DNSServer
 from http_server import HTTPServer
-from logging_utility import get_logger
+from logging_utility import create_logger
 
 # Create a logger for this module
-logger = get_logger("CaptivePortal")
+logger = create_logger("CaptivePortal")
 
 
 ################################################################################
