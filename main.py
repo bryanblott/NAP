@@ -15,6 +15,8 @@ class CaptivePortal:
         print("[INFO] CaptivePortal: HTTPServer initialized.")
         self.wifi_manager = WiFiManager(self.config)
         print("[INFO] CaptivePortal: WiFiManager initialized.")
+        self.dns_task = None
+        self.http_task = None
 
     async def start(self):
         try:
@@ -26,15 +28,17 @@ class CaptivePortal:
             # Run DNS and HTTP servers as concurrent tasks
             try:
                 print("[INFO] CaptivePortal: Starting DNS server.")
-                dns_task = asyncio.create_task(self.dns_server.start())
+                self.dns_task = asyncio.create_task(self.dns_server.start())
                 print("[DEBUG] CaptivePortal: DNS server task created successfully.")
 
                 print("[INFO] CaptivePortal: Starting HTTP server.")
-                http_task = asyncio.create_task(self.http_server.start())
+                self.http_task = asyncio.create_task(self.http_server.start())
                 print("[DEBUG] CaptivePortal: HTTP server task created successfully.")
 
                 print("[INFO] CaptivePortal: Services started successfully.")
-                await asyncio.gather(dns_task, http_task)
+                await asyncio.gather(self.dns_task, self.http_task)
+            except asyncio.CancelledError:
+                print("[INFO] CaptivePortal: Tasks cancelled, initiating shutdown.")
             except Exception as e:
                 print(f"[ERROR] CaptivePortal: Exception in starting servers: {type(e).__name__}: {str(e)}")
 
@@ -47,6 +51,16 @@ class CaptivePortal:
 
     async def shutdown(self):
         print("[INFO] CaptivePortal: Shutting down services.")
+        
+        # Cancel running tasks
+        if self.dns_task:
+            self.dns_task.cancel()
+        if self.http_task:
+            self.http_task.cancel()
+        
+        # Wait for tasks to complete their cancellation
+        await asyncio.sleep(1)
+
         try:
             print("[DEBUG] CaptivePortal: Stopping DNS server.")
             await self.dns_server.stop()
@@ -74,15 +88,24 @@ async def main():
     captive_portal = CaptivePortal()
     try:
         print("[INFO] Main: Starting Captive Portal.")
-        await captive_portal.start()
+        main_task = asyncio.create_task(captive_portal.start())
+        
+        # Run the main task until it's cancelled
+        await main_task
     except KeyboardInterrupt:
-        print("[INFO] CaptivePortal: Keyboard interrupt received, shutting down.")
+        print("[INFO] Main: Keyboard interrupt received, initiating graceful shutdown.")
     except Exception as e:
         print(f"[ERROR] Main: Unexpected exception: {type(e).__name__}: {str(e)}")
     finally:
-        # Ensure shutdown is completed properly in case of an exception
+        # Ensure shutdown is completed properly
         print("[DEBUG] Main: Ensuring proper shutdown.")
         await captive_portal.shutdown()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("[INFO] Main: KeyboardInterrupt caught in asyncio.run(). Exiting.")
+    finally:
+        # Perform any necessary cleanup here
+        print("[INFO] Main: Cleanup complete. Exiting program.")
