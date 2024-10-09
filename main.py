@@ -16,7 +16,7 @@ class CaptivePortal:
         )
         self.wifi_manager = WiFiManager(self.config, self.http_server)
         self.dns_server = DNSServer()
-        self.http_server.set_wifi_manager(self.wifi_manager)  # Set the WiFiManager
+        self.http_server.set_wifi_manager(self.wifi_manager)
         self.stop_event = asyncio.Event()
 
     async def start(self):
@@ -40,6 +40,7 @@ class CaptivePortal:
         await asyncio.sleep(1)
 
         self.wifi_manager.stop_ap()
+        await self.http_server.stop()
         print("[INFO] CaptivePortal: Shutdown complete")
 
 async def main():

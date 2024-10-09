@@ -67,20 +67,27 @@ class WiFiManager:
     async def connect_to_network(self, ssid, password):
         """Connect to a specific network."""
         print(f"[INFO] WiFiManager: Attempting to connect to network: {ssid}")
-        if await self.connect_sta(ssid, password):
-            ip_address = self.get_sta_ip()
+        self.sta.active(True)
+        self.sta.connect(ssid, password)
+        
+        # Wait for connection with timeout
+        for _ in range(20):  # 20 second timeout
+            if self.sta.isconnected():
+                break
+            await asyncio.sleep(1)
+        
+        if self.sta.isconnected():
+            ip_address = self.sta.ifconfig()[0]
             print(f"[INFO] WiFiManager: Connected to {ssid}. IP address: {ip_address}")
+            
+            # Restart HTTP server
+            await asyncio.sleep(2)  # Give some time for network to stabilize
             await self.http_server.restart()
+            
             return True
         else:
             print(f"[WARNING] WiFiManager: Failed to connect to {ssid}")
             return False
-
-    def disconnect_sta(self):
-        """Disconnect from the current network."""
-        if self.sta.isconnected():
-            self.sta.disconnect()
-            print("[INFO] WiFiManager: Disconnected from the current network")
 
     def get_current_ssid(self):
         """Get the SSID of the currently connected network."""

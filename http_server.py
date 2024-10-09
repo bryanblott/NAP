@@ -35,30 +35,27 @@ class HTTPServer:
             return False
 
     async def start(self):
-        if self.server:
-            self.server.close()
-            await self.server.wait_closed()
-
-        if self.use_tls:
-            context = tls.SSLContext(tls.PROTOCOL_TLS_SERVER)
-            try:
-                context.load_cert_chain(self.ssl_certfile, self.ssl_keyfile)
-            except Exception as e:
-                print(f"[ERROR] Failed to load TLS cert/key: {e}")
-                print("[WARNING] Falling back to HTTP")
-                self.use_tls = False
-
+        print(f"[DEBUG] HTTP(S) Server: Starting on {self.host}:{self.port}")
         try:
+            if self.use_tls:
+                context = tls.SSLContext(tls.PROTOCOL_TLS_SERVER)
+                try:
+                    context.load_cert_chain(self.ssl_certfile, self.ssl_keyfile)
+                except Exception as e:
+                    print(f"[ERROR] Failed to load TLS cert/key: {e}")
+                    print("[WARNING] Falling back to HTTP")
+                    self.use_tls = False
+
             if self.use_tls:
                 self.server = await asyncio.start_server(self.handle_request, self.host, self.port, ssl=context)
                 print(f"[INFO] HTTPS Server: Started on {self.host}:{self.port}")
             else:
                 self.server = await asyncio.start_server(self.handle_request, self.host, self.port)
                 print(f"[INFO] HTTP Server: Started on {self.host}:{self.port}")
-
             self.running = True
         except Exception as e:
             print(f"[ERROR] HTTP(S) Server: Failed to start: {e}")
+            self.running = False
 
     async def stop(self):
         if self.server:
@@ -70,12 +67,9 @@ class HTTPServer:
     async def restart(self):
         print("[INFO] HTTP(S) Server: Restarting...")
         await self.stop()
+        await asyncio.sleep(1)  # Give a short delay before restarting
         await self.start()
         print("[INFO] HTTP(S) Server: Restarted successfully")
-
-    def url_decode(self, s):
-        """Simple URL decoding function"""
-        return s.replace('%20', ' ').replace('+', ' ')
 
     async def handle_request(self, reader, writer):
         try:
@@ -108,10 +102,34 @@ class HTTPServer:
             
             await writer.drain()
         except Exception as e:
-            print(f"[ERROR] HTTP(S) Server: {e}")
+            print(f"[ERROR] HTTP(S) Server: Error handling request: {e}")
         finally:
             writer.close()
             await writer.wait_closed()
+
+    async def serve_file(self, path, writer):
+        try:
+            full_path = f"{self.root_directory}/{path}"
+            print(f"[DEBUG] Attempting to serve file: {full_path}")
+            with open(full_path, "rb") as file:
+                content = file.read()
+                writer.write(b"HTTP/1.0 200 OK\r\n")
+                if path.endswith('.html'):
+                    writer.write(b"Content-Type: text/html\r\n")
+                elif path.endswith('.css'):
+                    writer.write(b"Content-Type: text/css\r\n")
+                elif path.endswith('.js'):
+                    writer.write(b"Content-Type: application/javascript\r\n")
+                else:
+                    writer.write(b"Content-Type: text/plain\r\n")
+                writer.write(f"Content-Length: {len(content)}\r\n\r\n".encode('utf-8'))
+                writer.write(content)
+            print(f"[DEBUG] File served successfully: {full_path}")
+        except OSError as e:
+            print(f"[ERROR] Failed to serve file {path}: {e}")
+            response = f"HTTP/1.0 404 Not Found\r\n\r\nFile not found: {path}"
+            writer.write(response.encode('utf-8'))
+        await writer.drain()
 
     async def handle_scan_request(self, writer):
         if self.wifi_manager:
@@ -171,26 +189,6 @@ class HTTPServer:
         writer.write(response.encode('utf-8'))
         await writer.drain()
 
-    async def serve_file(self, path, writer):
-        try:
-            full_path = f"{self.root_directory}/{path}"
-            print(f"[DEBUG] Attempting to serve file: {full_path}")
-            with open(full_path, "rb") as file:
-                content = file.read()
-                writer.write(b"HTTP/1.0 200 OK\r\n")
-                if path.endswith('.html'):
-                    writer.write(b"Content-Type: text/html\r\n")
-                elif path.endswith('.css'):
-                    writer.write(b"Content-Type: text/css\r\n")
-                elif path.endswith('.js'):
-                    writer.write(b"Content-Type: application/javascript\r\n")
-                else:
-                    writer.write(b"Content-Type: text/plain\r\n")
-                writer.write(f"Content-Length: {len(content)}\r\n\r\n".encode('utf-8'))
-                writer.write(content)
-            print(f"[DEBUG] File served successfully: {full_path}")
-        except OSError as e:
-            print(f"[ERROR] Failed to serve file {path}: {e}")
-            response = f"HTTP/1.0 404 Not Found\r\n\r\nFile not found: {path}"
-            writer.write(response.encode('utf-8'))
-        await writer.drain()
+    def url_decode(self, s):
+        """Simple URL decoding function"""
+        return s.replace('%20', ' ').replace('+', ' ')
