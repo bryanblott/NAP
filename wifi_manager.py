@@ -7,17 +7,19 @@ class WiFiManager:
         self.ap = network.WLAN(network.AP_IF)
         self.sta = network.WLAN(network.STA_IF)
         
-        # Initialize AP mode with configuration
-        self.start_ap(self.config.get_ssid(), self.config.get_password())
-        
+        # Configure AP mode
+        self.ap.active(True)
+        self.ap.config(essid=self.config.get_ssid(), password=self.config.get_password())
+        print(f"[INFO] WiFiManager: Access Point configured with SSID '{self.config.get_ssid()}'")
+
         # Configure STA mode (inactive initially)
         self.sta.active(True)
     
     def start_ap(self, ssid, password):
-            """Activate AP mode with provided SSID and password."""
-            self.ap.active(True)
-            self.ap.config(essid=ssid, password=password, authmode=network.AUTH_WPA_WPA2_PSK)
-            print(f"[INFO] WiFiManager: Access Point started with SSID '{ssid}'")
+        """Activate AP mode with provided SSID and password."""
+        self.ap.active(True)
+        self.ap.config(essid=ssid, password=password, authmode=network.AUTH_WPA_WPA2_PSK)
+        print(f"[INFO] WiFiManager: Access Point started with SSID '{ssid}'")
     
     def stop_ap(self):
         """Deactivate AP mode."""
@@ -39,15 +41,59 @@ class WiFiManager:
 
     async def scan_networks(self):
         """Scan for available WiFi networks."""
-        networks = []
+        print("[DEBUG] WiFiManager: Scanning for networks")
+        self.sta.active(True)
         try:
-            self.sta.active(True)
             networks = self.sta.scan()
-            print("[INFO] WiFiManager: Scanned WiFi networks successfully.")
+            ssids = [net[0].decode('utf-8') for net in networks]
+            print(f"[INFO] WiFiManager: Found {len(ssids)} networks")
+            return ssids
         except Exception as e:
-            print(f"[ERROR] WiFiManager: Failed to scan WiFi networks: {e}")
-        return networks
+            print(f"[ERROR] WiFiManager: Error scanning networks: {e}")
+            return []
 
     def is_sta_connected(self):
         """Check if STA is connected to a network."""
         return self.sta.isconnected()
+
+    def get_sta_ip(self):
+        """Get the IP address of the STA interface."""
+        if self.sta.isconnected():
+            return self.sta.ifconfig()[0]
+        return None
+
+    async def connect_to_network(self, ssid, password):
+        """Connect to a specific network."""
+        print(f"[INFO] WiFiManager: Attempting to connect to network: {ssid}")
+        if await self.connect_sta(ssid, password):
+            ip_address = self.get_sta_ip()
+            print(f"[INFO] WiFiManager: Connected to {ssid}. IP address: {ip_address}")
+            return True
+        else:
+            print(f"[WARNING] WiFiManager: Failed to connect to {ssid}")
+            return False
+
+    def disconnect_sta(self):
+        """Disconnect from the current network."""
+        if self.sta.isconnected():
+            self.sta.disconnect()
+            print("[INFO] WiFiManager: Disconnected from the current network")
+
+    def get_current_ssid(self):
+        """Get the SSID of the currently connected network."""
+        if self.sta.isconnected():
+            return self.sta.config('essid')
+        return None
+
+    async def reconnect(self):
+        """Attempt to reconnect to the last known network."""
+        ssid = self.get_current_ssid()
+        if ssid:
+            password = self.config.get_password()  # Assuming you store the password in the config
+            return await self.connect_to_network(ssid, password)
+        return False
+
+# Example usage:
+# config = Configuration()  # You need to implement this class to load/store configuration
+# wifi_manager = WiFiManager(config)
+# asyncio.run(wifi_manager.scan_networks())

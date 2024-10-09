@@ -1,5 +1,6 @@
 import uasyncio as asyncio
 import os
+import json
 
 try:
     import tls
@@ -17,6 +18,10 @@ class HTTPServer:
         self.server = None
         self.use_tls = self.check_tls_files()
         self.running = False
+        self.wifi_manager = None  # Initialize to None, we'll set it later
+
+    def set_wifi_manager(self, wifi_manager):
+        self.wifi_manager = wifi_manager
 
     def check_tls_files(self):
         try:
@@ -50,11 +55,9 @@ class HTTPServer:
 
             self.running = True
             while self.running:
-                try:
-                    await asyncio.sleep(1)  # Allow for cancellation
-                except asyncio.CancelledError:
-                    print("[INFO] HTTP(S) Server: Received cancellation signal")
-                    break
+                await asyncio.sleep(1)  # Allow for cancellation
+        except asyncio.CancelledError:
+            print("[INFO] HTTP(S) Server: Received cancellation signal")
         except Exception as e:
             print(f"[ERROR] HTTP(S) Server: Failed to start: {e}")
         finally:
@@ -85,6 +88,9 @@ class HTTPServer:
             elif path == '/script.js':
                 print("[DEBUG] Serving script.js")
                 await self.serve_file('script.js', writer)
+            elif path == '/scan':
+                print("[DEBUG] Handling scan request")
+                await self.handle_scan_request(writer)
             else:
                 print(f"[DEBUG] Unrecognized path: {path}")
                 response = "HTTP/1.0 404 Not Found\r\n\r\nNot Found"
@@ -96,6 +102,23 @@ class HTTPServer:
         finally:
             writer.close()
             await writer.wait_closed()
+
+    async def handle_scan_request(self, writer):
+        if self.wifi_manager:
+            try:
+                networks = await self.wifi_manager.scan_networks()
+                response_data = json.dumps(networks)
+                response = f"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {len(response_data)}\r\n\r\n{response_data}"
+                writer.write(response.encode('utf-8'))
+                print(f"[DEBUG] Scan results: {networks}")
+            except Exception as e:
+                print(f"[ERROR] Failed to scan networks: {e}")
+                response = "HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to scan networks"
+                writer.write(response.encode('utf-8'))
+        else:
+            print("[ERROR] WiFiManager not available")
+            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nWiFiManager not available"
+            writer.write(response.encode('utf-8'))
 
     async def serve_file(self, path, writer):
         try:
@@ -120,7 +143,3 @@ class HTTPServer:
             response = f"HTTP/1.0 404 Not Found\r\n\r\nFile not found: {path}"
             writer.write(response.encode('utf-8'))
         await writer.drain()
-
-# Example usage:
-# server = HTTPServer(root_directory='www', host='0.0.0.0', port=80, ssl_certfile='cert.pem', ssl_keyfile='private.key')
-# asyncio.run(server.start())

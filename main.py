@@ -16,6 +16,7 @@ class CaptivePortal:
             ssl_certfile='cert.pem', 
             ssl_keyfile='private.key'
         )
+        self.http_server.set_wifi_manager(self.wifi_manager)  # Set the WiFiManager
         self.stop_event = asyncio.Event()
 
     async def start(self):
