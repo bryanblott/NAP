@@ -91,6 +91,9 @@ class HTTPServer:
             elif path == '/scan':
                 print("[DEBUG] Handling scan request")
                 await self.handle_scan_request(writer)
+            elif path == '/connect':
+                print("[DEBUG] Handling connect request")
+                await self.handle_connect_request(reader, writer)
             else:
                 print(f"[DEBUG] Unrecognized path: {path}")
                 response = "HTTP/1.0 404 Not Found\r\n\r\nNot Found"
@@ -102,6 +105,44 @@ class HTTPServer:
         finally:
             writer.close()
             await writer.wait_closed()
+
+    async def handle_connect_request(self, reader, writer):
+        if self.wifi_manager:
+            try:
+                # Read the POST data
+                content_length = 0
+                while True:
+                    line = await reader.readline()
+                    if line.startswith(b'Content-Length:'):
+                        content_length = int(line.split(b':')[1])
+                    if line == b'\r\n':
+                        break
+                
+                post_data = await reader.read(content_length)
+                data = post_data.decode('utf-8')
+                params = {k: v for k, v in [param.split('=') for param in data.split('&')]}
+                
+                ssid = params.get('ssid')
+                password = params.get('password')
+                
+                if ssid and password:
+                    print(f"[DEBUG] Attempting to connect to SSID: {ssid}")
+                    success = await self.wifi_manager.connect_to_network(ssid, password)
+                    if success:
+                        response = "HTTP/1.0 200 OK\r\n\r\nConnected successfully"
+                    else:
+                        response = "HTTP/1.0 400 Bad Request\r\n\r\nFailed to connect"
+                else:
+                    response = "HTTP/1.0 400 Bad Request\r\n\r\nMissing SSID or password"
+            except Exception as e:
+                print(f"[ERROR] Failed to connect to network: {e}")
+                response = "HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to connect to network"
+        else:
+            print("[ERROR] WiFiManager not available")
+            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nWiFiManager not available"
+        
+        writer.write(response.encode('utf-8'))
+        await writer.drain()
 
     async def handle_scan_request(self, writer):
         if self.wifi_manager:
