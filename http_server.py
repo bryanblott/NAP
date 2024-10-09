@@ -74,14 +74,21 @@ class HTTPServer:
             
             # Parse the request
             method, path, _ = request_line.decode().strip().split(' ', 2)
+            print(f"[DEBUG] Parsed request - Method: {method}, Path: {path}")
             
-            if path == '/' or not path.startswith('/index.html'):
-                # Redirect to the captive portal page
-                response = "HTTP/1.0 302 Found\r\nLocation: /index.html\r\n\r\n"
-                writer.write(response.encode('utf-8'))
+            if path == '/' or path == '/index.html':
+                print("[DEBUG] Serving index.html")
+                await self.serve_file('index.html', writer)
+            elif path == '/styles.css':
+                print("[DEBUG] Serving styles.css")
+                await self.serve_file('styles.css', writer)
+            elif path == '/script.js':
+                print("[DEBUG] Serving script.js")
+                await self.serve_file('script.js', writer)
             else:
-                # Serve the requested file
-                await self.serve_file(path.lstrip('/'), writer)
+                print(f"[DEBUG] Unrecognized path: {path}")
+                response = "HTTP/1.0 404 Not Found\r\n\r\nNot Found"
+                writer.write(response.encode('utf-8'))
             
             await writer.drain()
         except Exception as e:
@@ -92,26 +99,27 @@ class HTTPServer:
 
     async def serve_file(self, path, writer):
         try:
-            with open(f"{self.root_directory}/{path}", "rb") as file:
+            full_path = f"{self.root_directory}/{path}"
+            print(f"[DEBUG] Attempting to serve file: {full_path}")
+            with open(full_path, "rb") as file:
+                content = file.read()
                 writer.write(b"HTTP/1.0 200 OK\r\n")
                 if path.endswith('.html'):
-                    writer.write(b"Content-Type: text/html\r\n\r\n")
+                    writer.write(b"Content-Type: text/html\r\n")
                 elif path.endswith('.css'):
-                    writer.write(b"Content-Type: text/css\r\n\r\n")
+                    writer.write(b"Content-Type: text/css\r\n")
                 elif path.endswith('.js'):
-                    writer.write(b"Content-Type: application/javascript\r\n\r\n")
+                    writer.write(b"Content-Type: application/javascript\r\n")
                 else:
-                    writer.write(b"Content-Type: text/plain\r\n\r\n")
-                
-                chunk = file.read(1024)
-                while chunk:
-                    writer.write(chunk)
-                    await writer.drain()
-                    chunk = file.read(1024)
-        except OSError:
-            response = "HTTP/1.0 404 Not Found\r\n\r\nFile not found"
+                    writer.write(b"Content-Type: text/plain\r\n")
+                writer.write(f"Content-Length: {len(content)}\r\n\r\n".encode('utf-8'))
+                writer.write(content)
+            print(f"[DEBUG] File served successfully: {full_path}")
+        except OSError as e:
+            print(f"[ERROR] Failed to serve file {path}: {e}")
+            response = f"HTTP/1.0 404 Not Found\r\n\r\nFile not found: {path}"
             writer.write(response.encode('utf-8'))
-            await writer.drain()
+        await writer.drain()
 
 # Example usage:
 # server = HTTPServer(root_directory='www', host='0.0.0.0', port=80, ssl_certfile='cert.pem', ssl_keyfile='private.key')

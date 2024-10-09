@@ -1,28 +1,25 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 Captive Portal</title>
-    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body { background-color: black !important; color: white !important; }
+    </style>
 </head>
-<body>
+<body style="background-color: black; color: white;">
     <h1>Welcome to the ESP32 Captive Portal</h1>
     <p>Select a Wi-Fi network and enter the password to connect:</p>
-
-    <form id="wifi-form">
-        <label for="networks">Available Networks:</label>
-        <select id="networks" name="networks">
-            <!-- Wi-Fi networks will be populated here by JavaScript -->
-        </select>
-        <br><br>
-        <label for="password">Password:</label>
-        <input type="password" id="password" name="password">
-        <br><br>
-        <button type="button" onclick="connectToWiFi()">Connect</button>
-    </form>
-
+    <select id="networks">
+        <option value="">Loading networks...</option>
+    </select>
+    <br><br>
+    <input type="password" id="password" placeholder="Password">
+    <br><br>
+    <button onclick="connectToWiFi()">Connect</button>
     <div id="status"></div>
-
     <script src="script.js"></script>
 </body>
 </html>
