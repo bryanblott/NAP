@@ -1,6 +1,5 @@
 import uasyncio as asyncio
 import os
-import json
 
 try:
     import tls
@@ -18,7 +17,7 @@ class HTTPServer:
         self.server = None
         self.use_tls = self.check_tls_files()
         self.running = False
-        self.wifi_manager = None  # Initialize to None, we'll set it later
+        self.wifi_manager = None
 
     def set_wifi_manager(self, wifi_manager):
         self.wifi_manager = wifi_manager
@@ -55,20 +54,20 @@ class HTTPServer:
 
             self.running = True
             while self.running:
-                await asyncio.sleep(1)  # Allow for cancellation
-        except asyncio.CancelledError:
-            print("[INFO] HTTP(S) Server: Received cancellation signal")
+                await asyncio.sleep(1)
         except Exception as e:
             print(f"[ERROR] HTTP(S) Server: Failed to start: {e}")
-        finally:
-            await self.stop()
 
     async def stop(self):
-        self.running = False
         if self.server:
             self.server.close()
             await self.server.wait_closed()
+        self.running = False
         print("[INFO] HTTP(S) Server: Stopped")
+
+    def url_decode(self, s):
+        """Simple URL decoding function"""
+        return s.replace('%20', ' ').replace('+', ' ')
 
     async def handle_request(self, reader, writer):
         try:
@@ -106,6 +105,23 @@ class HTTPServer:
             writer.close()
             await writer.wait_closed()
 
+    async def handle_scan_request(self, writer):
+        if self.wifi_manager:
+            try:
+                networks = await self.wifi_manager.scan_networks()
+                response_data = ','.join(networks)  # Join network names with commas
+                response = f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(response_data)}\r\n\r\n{response_data}"
+                writer.write(response.encode('utf-8'))
+                print(f"[DEBUG] Scan results: {networks}")
+            except Exception as e:
+                print(f"[ERROR] Failed to scan networks: {e}")
+                response = "HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to scan networks"
+                writer.write(response.encode('utf-8'))
+        else:
+            print("[ERROR] WiFiManager not available")
+            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nWiFiManager not available"
+            writer.write(response.encode('utf-8'))
+
     async def handle_connect_request(self, reader, writer):
         if self.wifi_manager:
             try:
@@ -120,10 +136,13 @@ class HTTPServer:
                 
                 post_data = await reader.read(content_length)
                 data = post_data.decode('utf-8')
-                params = {k: v for k, v in [param.split('=') for param in data.split('&')]}
+                params = {}
+                for param in data.split('&'):
+                    key, value = param.split('=')
+                    params[key] = self.url_decode(value)
                 
-                ssid = params.get('ssid')
-                password = params.get('password')
+                ssid = params.get('ssid', '')
+                password = params.get('password', '')
                 
                 if ssid and password:
                     print(f"[DEBUG] Attempting to connect to SSID: {ssid}")
@@ -143,23 +162,6 @@ class HTTPServer:
         
         writer.write(response.encode('utf-8'))
         await writer.drain()
-
-    async def handle_scan_request(self, writer):
-        if self.wifi_manager:
-            try:
-                networks = await self.wifi_manager.scan_networks()
-                response_data = json.dumps(networks)
-                response = f"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {len(response_data)}\r\n\r\n{response_data}"
-                writer.write(response.encode('utf-8'))
-                print(f"[DEBUG] Scan results: {networks}")
-            except Exception as e:
-                print(f"[ERROR] Failed to scan networks: {e}")
-                response = "HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to scan networks"
-                writer.write(response.encode('utf-8'))
-        else:
-            print("[ERROR] WiFiManager not available")
-            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nWiFiManager not available"
-            writer.write(response.encode('utf-8'))
 
     async def serve_file(self, path, writer):
         try:

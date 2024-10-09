@@ -31,11 +31,12 @@ class WiFiManager:
         """Connect to a WiFi network using STA mode."""
         print(f"[DEBUG] WiFiManager: Attempting to connect to {ssid}")
         self.sta.connect(ssid, password)
-        for _ in range(10):  # Wait for up to 10 seconds
+        for _ in range(20):  # Increase timeout to 20 seconds
             if self.sta.isconnected():
                 print(f"[INFO] WiFiManager: Connected to {ssid} successfully.")
                 return True
             await asyncio.sleep(1)
+            print(f"[DEBUG] WiFiManager: Connection attempt {_ + 1}/20")
         print(f"[WARNING] WiFiManager: Failed to connect to {ssid}.")
         return False
 
@@ -45,8 +46,8 @@ class WiFiManager:
         self.sta.active(True)
         try:
             networks = self.sta.scan()
-            ssids = [net[0].decode('utf-8') for net in networks]
-            print(f"[INFO] WiFiManager: Found {len(ssids)} networks")
+            ssids = list(set([net[0].decode('utf-8') for net in networks]))  # Remove duplicates
+            print(f"[INFO] WiFiManager: Found {len(ssids)} unique networks")
             return ssids
         except Exception as e:
             print(f"[ERROR] WiFiManager: Error scanning networks: {e}")
@@ -92,8 +93,3 @@ class WiFiManager:
             password = self.config.get_password()  # Assuming you store the password in the config
             return await self.connect_to_network(ssid, password)
         return False
-
-# Example usage:
-# config = Configuration()  # You need to implement this class to load/store configuration
-# wifi_manager = WiFiManager(config)
-# asyncio.run(wifi_manager.scan_networks())

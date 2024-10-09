@@ -4,8 +4,14 @@
 // Fetch the list of available Wi-Fi networks and populate the dropdown
 function fetchNetworks() {
     fetch('/scan')
-        .then(response => response.json())
-        .then(networks => {
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.text();
+        })
+        .then(data => {
+            const networks = data.split(',').filter(network => network.trim() !== '');
             const networkSelect = document.getElementById('networks');
             networkSelect.innerHTML = ''; // Clear existing options
             networks.forEach(network => {
@@ -45,3 +51,4 @@ function connectToWiFi() {
 
 // Call fetchNetworks when the page loads
 document.addEventListener('DOMContentLoaded', fetchNetworks);
+
