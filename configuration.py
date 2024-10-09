@@ -1,41 +1,11 @@
-################################################################################
-# Configuration class for managing application settings.
-#
-# Attributes:
-#     CONFIG_FILE (str): The name of the configuration file.
-#
-# Methods:
-#     __init__():
-#         Initializes the Configuration object with default settings.
-#     
-#     save_default_config():
-#         Creates and saves the default configuration file if it does not exist.
-#     
-#     load():
-#         Loads configuration from file, or uses defaults if not found.
-################################################################################
-
-
-################################################################################
-# Dependencies
-################################################################################
 import json
 import os
-from logging_utility import create_logger
 
-# Create a logger for this module
-logger = create_logger("Configuration")
-
-
-################################################################################
-# Code
-################################################################################
 class Configuration:
     CONFIG_FILE = 'config.json'
 
     def __init__(self, filename=None):
         """Initialize Configuration with a file or default name."""
-        # Use provided filename or default
         self.filename = filename if filename else self.CONFIG_FILE
         self.config = {
             'ssid': 'ESP32-Captive-Portal',
@@ -48,20 +18,21 @@ class Configuration:
         """Load configuration from the configuration file."""
         try:
             with open(self.filename, 'r') as file:
-                self.config = json.load(file)
-            logger.info("Configuration loaded successfully.")
+                config_data = json.load(file)
+                self.config.update(config_data)
+            print("[INFO] Configuration loaded successfully.")
         except OSError as e:
             if e.args[0] == 2:  # ENOENT error, file not found
-                logger.warning(f"Configuration file '{self.filename}' not found, using default values and creating it.")
+                print(f"[WARNING] Configuration file '{self.filename}' not found, using default values and creating it.")
                 self.save_default_config()
             else:
-                logger.error(f"Failed to load configuration file: {e}")
+                print(f"[ERROR] Failed to load configuration file: {e}")
         except json.JSONDecodeError:
-            logger.error("Error decoding JSON configuration file. Using default configuration.")
+            print("[ERROR] Error decoding JSON configuration file. Using default configuration.")
             self.config = self.default_config()
             self.save()
         except Exception as e:
-            logger.error(f"Unexpected error loading configuration: {e}")
+            print(f"[ERROR] Unexpected error loading configuration: {e}")
             self.config = self.default_config()
             self.save()
 
@@ -70,9 +41,9 @@ class Configuration:
         try:
             with open(self.filename, 'w') as file:
                 json.dump(self.config, file)
-            logger.info(f"Configuration saved successfully to {self.filename}.")
+            print(f"[INFO] Configuration saved successfully to {self.filename}.")
         except Exception as e:
-            logger.error(f"Failed to save configuration: {e}")
+            print(f"[ERROR] Failed to save configuration: {e}")
 
     def save_default_config(self):
         """Save the default configuration to the configuration file."""
@@ -87,6 +58,16 @@ class Configuration:
             'server_ip': '192.168.4.1'
         }
 
+    # Add getter methods below
+    def get_ssid(self):
+        """Get the SSID value from the configuration."""
+        return self.config.get('ssid', 'ESP32-Captive-Portal')
+
+    def get_password(self):
+        """Get the Wi-Fi password from the configuration."""
+        return self.config.get('password', '12345678')
+
+    # Remaining methods
     def get(self, key):
         """Get a configuration value by key."""
         return self.config.get(key, None)
@@ -100,24 +81,18 @@ class Configuration:
         """Update multiple configuration values at once."""
         self.config.update(new_config)
         self.save()
-        logger.info(f"Configuration updated with values: {new_config}")
+        print(f"[INFO] Configuration updated with values: {new_config}")
 
     def reset_to_defaults(self):
         """Reset configuration to default values."""
-        logger.info("Resetting configuration to default values.")
+        print("[INFO] Resetting configuration to default values.")
         self.config = self.default_config()
         self.save()
 
     def display(self):
         """Display the current configuration values."""
-        logger.info(f"Current Configuration: {self.config}")
+        print(f"[INFO] Current Configuration: {self.config}")
 
 if __name__ == "__main__":
     config = Configuration()
     config.display()  # Display current configuration values
-
-
-
-
-
-

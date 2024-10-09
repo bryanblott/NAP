@@ -1,37 +1,14 @@
-################################################################################
-# This module defines a DNSServer class that implements a simple asynchronous 
-# DNS server using Python's asyncio library. The server listens for DNS requests 
-# on port 53 and responds with a predefined IP address. It handles incoming DNS 
-# requests concurrently and ensures controlled access to the DNS handling logic 
-# using an asyncio.Lock.
-#
-# Classes:
-#     DNSServer: A class to create and run an asynchronous DNS server.
-#
-# Usage:
-#     Create an instance of the DNSServer class and call its run method within 
-#     an asyncio event loop to start the server.
-################################################################################
+# Adding additional debug logging to dns_server.py for better diagnosis
 
-
-################################################################################
-# Dependencies
-################################################################################
 import socket
 import uasyncio as asyncio
-from logging_utility import create_logger
+import time
 
-# Create a logger for the DNS server
-logger = create_logger("DNSServer")
-
-
-################################################################################
-# Code
-################################################################################
 class DNSQuery:
     def __init__(self, data):
         self.data = data
         self.domain = ''
+        print(f"[DEBUG] Initializing DNSQuery with data: {data}")
         self.parse_domain()
 
     def parse_domain(self):
@@ -39,6 +16,7 @@ class DNSQuery:
         state = 0
         expected_length = 0
         domain_parts = []
+        print(f"[DEBUG] Parsing domain from DNS data: {self.data[12:]}")
         for byte in self.data[12:]:
             if state == 1:
                 if byte == 0:
@@ -54,6 +32,7 @@ class DNSQuery:
                     break
                 state = 1
         self.domain = ''.join(domain_parts).strip('.')
+        print(f"[INFO] Parsed domain: {self.domain}")
 
     def response(self, ip):
         """Generate a response for the given IP address"""
@@ -64,11 +43,12 @@ class DNSQuery:
             packet += b'\xc0\x0c'  # Pointer to domain name
             packet += b'\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04'  # Response type, ttl and resource data length -> 4 bytes
             packet += bytes(map(int, ip.split('.')))  # 4 bytes of IP
-
+            print(f"[INFO] Generated DNS response for {ip}")
             return packet
         except Exception as e:
-            logger.error(f"Error creating DNS response: {e}")
+            print(f"[ERROR] Error creating DNS response: {e}")
             return b''  # Return empty response in case of error
+
 
 class DNSServer:
     def __init__(self, server_ip="192.168.4.1"):
@@ -76,6 +56,8 @@ class DNSServer:
         self.udps = None
         self._running = False
         self.lock = asyncio.Lock()
+        self.last_status_update = 0
+        print(f"[INFO] DNSServer initialized with IP: {self.server_ip}")
 
     async def start(self):
         """Start the DNS server to handle incoming DNS requests"""
@@ -85,60 +67,52 @@ class DNSServer:
         self.udps.setblocking(False)
         try:
             self.udps.bind(('0.0.0.0', 53))
-            logger.info("DNS server started on port 53")
+            print("[INFO] DNS server started on port 53")
             
             while self._running:
                 try:
                     await self.handle_dns(self.udps)
+                    await self.print_status_update()
                 except asyncio.CancelledError:
-                    logger.warning("DNS server task cancelled, shutting down...")
+                    print("[WARNING] DNS server task cancelled, shutting down...")
                     break
                 except Exception as e:
-                    logger.error(f"Error handling DNS query: {e}")
+                    print(f"[ERROR] Error in DNS server main loop: {e}")
                     await asyncio.sleep(1)
         except OSError as e:
-            logger.error(f"Failed to bind DNS server on port 53: {e}")
+            print(f"[ERROR] Failed to bind DNS server on port 53: {e}")
             raise
         finally:
-            await self.stop_internal()
+            await self.stop()
+
+    async def stop(self):
+        """Stop the DNS server and release resources"""
+        print("[INFO] Stopping DNS server...")
+        self._running = False
+        if self.udps:
+            self.udps.close()
+            self.udps = None
+        print("[INFO] DNS server stopped.")
 
     async def handle_dns(self, sock):
         """Handle DNS requests with a polling approach and controlled access"""
         async with self.lock:
             try:
                 data, addr = sock.recvfrom(4096)
-                if not data:
-                    return
-
-                DNS = DNSQuery(data)
-                logger.info(f"Received DNS query for domain: {DNS.domain}")
-
-                if DNS.domain:
-                    sock.sendto(DNS.response(self.server_ip), addr)
-                    logger.info(f"Replying: {DNS.domain} -> {self.server_ip}")
-                else:
-                    logger.warning("Invalid or empty domain received, ignoring...")
-
-            except asyncio.CancelledError:
-                await asyncio.sleep(0)
-                return
+                if data:
+                    print(f"[INFO] Received DNS request from {addr}")
+                    DNS = DNSQuery(data)
+                    response = DNS.response(self.server_ip)
+                    sock.sendto(response, addr)
+                    print(f"[INFO] Replied: {DNS.domain} -> {self.server_ip}")
             except OSError as e:
-                if e.args[0] == 11:  # EAGAIN or no data received yet
-                    await asyncio.sleep(0)
-                else:
-                    logger.error(f"Unexpected error in DNS handling: {e}")
-                    raise
-            except Exception as e:
-                logger.error(f"General error in DNS handling: {e}")
-                await asyncio.sleep(1)
+                if e.args[0] != 11:  # 11 is EAGAIN, meaning no data available
+                    print(f"[ERROR] Unexpected error in DNS handling: {e}")
+            await asyncio.sleep(0.1)
 
-    async def stop(self):
-        """Stop the DNS server and release resources"""
-        logger.info("Stopping DNS server internal loop...")
-        self._running = False
-        if self.udps:
-            logger.info("Closing DNS server socket...")
-            self.udps.close()
-            self.udps = None
-            logger.info("DNS server socket closed.")
-        await asyncio.sleep(0.1)
+    async def print_status_update(self):
+        """Print a status update every 60 seconds"""
+        current_time = time.time()
+        if current_time - self.last_status_update >= 60:
+            print("[INFO] DNS Server is running and waiting for requests...")
+            self.last_status_update = current_time
