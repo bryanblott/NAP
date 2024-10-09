@@ -2,8 +2,9 @@ import network
 import uasyncio as asyncio
 
 class WiFiManager:
-    def __init__(self, config):
+    def __init__(self, config, http_server):
         self.config = config
+        self.http_server = http_server
         self.ap = network.WLAN(network.AP_IF)
         self.sta = network.WLAN(network.STA_IF)
         
@@ -69,6 +70,7 @@ class WiFiManager:
         if await self.connect_sta(ssid, password):
             ip_address = self.get_sta_ip()
             print(f"[INFO] WiFiManager: Connected to {ssid}. IP address: {ip_address}")
+            await self.http_server.restart()
             return True
         else:
             print(f"[WARNING] WiFiManager: Failed to connect to {ssid}")

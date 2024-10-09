@@ -35,6 +35,10 @@ class HTTPServer:
             return False
 
     async def start(self):
+        if self.server:
+            self.server.close()
+            await self.server.wait_closed()
+
         if self.use_tls:
             context = tls.SSLContext(tls.PROTOCOL_TLS_SERVER)
             try:
@@ -53,8 +57,6 @@ class HTTPServer:
                 print(f"[INFO] HTTP Server: Started on {self.host}:{self.port}")
 
             self.running = True
-            while self.running:
-                await asyncio.sleep(1)
         except Exception as e:
             print(f"[ERROR] HTTP(S) Server: Failed to start: {e}")
 
@@ -64,6 +66,12 @@ class HTTPServer:
             await self.server.wait_closed()
         self.running = False
         print("[INFO] HTTP(S) Server: Stopped")
+
+    async def restart(self):
+        print("[INFO] HTTP(S) Server: Restarting...")
+        await self.stop()
+        await self.start()
+        print("[INFO] HTTP(S) Server: Restarted successfully")
 
     def url_decode(self, s):
         """Simple URL decoding function"""

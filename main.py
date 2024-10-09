@@ -7,8 +7,6 @@ from configuration import Configuration
 class CaptivePortal:
     def __init__(self):
         self.config = Configuration()
-        self.wifi_manager = WiFiManager(self.config)
-        self.dns_server = DNSServer()
         self.http_server = HTTPServer(
             root_directory='www', 
             host='0.0.0.0', 
@@ -16,6 +14,8 @@ class CaptivePortal:
             ssl_certfile='cert.pem', 
             ssl_keyfile='private.key'
         )
+        self.wifi_manager = WiFiManager(self.config, self.http_server)
+        self.dns_server = DNSServer()
         self.http_server.set_wifi_manager(self.wifi_manager)  # Set the WiFiManager
         self.stop_event = asyncio.Event()
 
