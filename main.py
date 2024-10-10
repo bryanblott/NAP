@@ -3,6 +3,7 @@ from dns_server import DNSServer
 from http_server import HTTPServer
 from interface_manager import InterfaceManager
 from configuration import Configuration
+import machine
 
 class CaptivePortal:
     def __init__(self):
