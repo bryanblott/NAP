@@ -1,12 +1,13 @@
 import uasyncio as asyncio
 from dns_server import DNSServer
 from http_server import HTTPServer
-from wifi_manager import WiFiManager
+from interface_manager import InterfaceManager
 from configuration import Configuration
 
 class CaptivePortal:
     def __init__(self):
         self.config = Configuration()
+        self.interface_manager = InterfaceManager(self.config)
         self.http_server = HTTPServer(
             root_directory='www', 
             host='0.0.0.0', 
@@ -14,17 +15,22 @@ class CaptivePortal:
             ssl_certfile='cert.pem', 
             ssl_keyfile='private.key'
         )
-        self.wifi_manager = WiFiManager(self.config, self.http_server)
+        self.http_server.set_interface_manager(self.interface_manager)
         self.dns_server = DNSServer()
-        self.http_server.set_wifi_manager(self.wifi_manager)
         self.stop_event = asyncio.Event()
 
     async def start(self):
-        print(f"[INFO] CaptivePortal: Starting AP with SSID: {self.config.get_ssid()}")
-        self.wifi_manager.start_ap(self.config.get_ssid(), self.config.get_password())
+        print("[INFO] CaptivePortal: Starting interfaces")
+        ap_started = await self.interface_manager.start_interface("ap")
+        sta_started = await self.interface_manager.start_interface("sta")
+
+        if not ap_started and not sta_started:
+            print("[ERROR] Failed to start any interface. Shutting down.")
+            return
 
         dns_task = asyncio.create_task(self.dns_server.start())
         http_task = asyncio.create_task(self.http_server.start())
+        interface_management_task = asyncio.create_task(self.interface_manager.manage_interfaces())
 
         print("[INFO] CaptivePortal: Services started successfully.")
         await self.stop_event.wait()
@@ -32,16 +38,22 @@ class CaptivePortal:
         # Cancel tasks
         dns_task.cancel()
         http_task.cancel()
-        await asyncio.gather(dns_task, http_task, return_exceptions=True)
+        interface_management_task.cancel()
+        await asyncio.gather(dns_task, http_task, interface_management_task, return_exceptions=True)
 
     async def shutdown(self):
         print("[INFO] CaptivePortal: Initiating shutdown...")
         self.stop_event.set()
         await asyncio.sleep(1)
 
-        self.wifi_manager.stop_ap()
+        await self.interface_manager.stop_all_interfaces()
         await self.http_server.stop()
         print("[INFO] CaptivePortal: Shutdown complete")
+
+    async def reset_device(self):
+        print("[INFO] Resetting the device...")
+        await asyncio.sleep(1)  # Give some time for the message to be printed
+        machine.reset()
 
 async def main():
     captive_portal = CaptivePortal()
@@ -49,8 +61,11 @@ async def main():
         await captive_portal.start()
     except asyncio.CancelledError:
         pass
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in main: {e}")
     finally:
         await captive_portal.shutdown()
+        await captive_portal.reset_device()
 
 def run():
     loop = asyncio.get_event_loop()
@@ -60,11 +75,17 @@ def run():
         loop.run_forever()
     except KeyboardInterrupt:
         print("[INFO] Main: Keyboard interrupt received, shutting down...")
+    except Exception as e:
+        print(f"[ERROR] Unexpected error in run: {e}")
     finally:
         main_task.cancel()
-        loop.run_until_complete(main_task)
+        try:
+            loop.run_until_complete(main_task)
+        except asyncio.CancelledError:
+            pass
         loop.close()
-        print("[INFO] Main: Cleanup complete. Exiting program.")
+        print("[INFO] Main: Cleanup complete. Resetting device...")
+        machine.reset()  # Reset the device after cleanup
 
 if __name__ == "__main__":
     run()

@@ -17,10 +17,10 @@ class HTTPServer:
         self.server = None
         self.use_tls = self.check_tls_files()
         self.running = False
-        self.wifi_manager = None
+        self.interface_manager = None
 
-    def set_wifi_manager(self, wifi_manager):
-        self.wifi_manager = wifi_manager
+    def set_interface_manager(self, interface_manager):
+        self.interface_manager = interface_manager
 
     def check_tls_files(self):
         try:
@@ -132,24 +132,37 @@ class HTTPServer:
         await writer.drain()
 
     async def handle_scan_request(self, writer):
-        if self.wifi_manager:
+        print("[DEBUG] Handling scan request")
+        if self.interface_manager:
             try:
-                networks = await self.wifi_manager.scan_networks()
-                response_data = ','.join(networks)  # Join network names with commas
-                response = f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(response_data)}\r\n\r\n{response_data}"
-                writer.write(response.encode('utf-8'))
-                print(f"[DEBUG] Scan results: {networks}")
+                sta_interface = self.interface_manager.interfaces.get('sta')
+                if sta_interface:
+                    print("[DEBUG] STA interface found, initiating scan")
+                    networks = await sta_interface.scan_networks()
+                    if networks:
+                        response_data = ','.join(networks)
+                        print(f"[DEBUG] Scan results: {response_data}")
+                        response = f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {len(response_data)}\r\n\r\n{response_data}"
+                    else:
+                        print("[DEBUG] No networks found")
+                        response = "HTTP/1.0 204 No Content\r\n\r\n"
+                else:
+                    print("[ERROR] STA interface not available")
+                    response = "HTTP/1.0 500 Internal Server Error\r\n\r\nSTA interface not available"
             except Exception as e:
                 print(f"[ERROR] Failed to scan networks: {e}")
                 response = "HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to scan networks"
-                writer.write(response.encode('utf-8'))
         else:
-            print("[ERROR] WiFiManager not available")
-            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nWiFiManager not available"
-            writer.write(response.encode('utf-8'))
+            print("[ERROR] InterfaceManager not available")
+            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nInterfaceManager not available"
+        
+        writer.write(response.encode('utf-8'))
+        await writer.drain()
+        print("[DEBUG] Scan response sent")
 
     async def handle_connect_request(self, reader, writer):
-        if self.wifi_manager:
+        print("[DEBUG] Handling connect request")
+        if self.interface_manager:
             try:
                 # Read the POST data
                 content_length = 0
@@ -172,19 +185,23 @@ class HTTPServer:
                 
                 if ssid and password:
                     print(f"[DEBUG] Attempting to connect to SSID: {ssid}")
-                    success = await self.wifi_manager.connect_to_network(ssid, password)
-                    if success:
-                        response = "HTTP/1.0 200 OK\r\n\r\nConnected successfully"
+                    sta_interface = self.interface_manager.interfaces.get('sta')
+                    if sta_interface:
+                        success = await sta_interface.connect(ssid, password)
+                        if success:
+                            response = "HTTP/1.0 200 OK\r\n\r\nConnected successfully"
+                        else:
+                            response = "HTTP/1.0 400 Bad Request\r\n\r\nFailed to connect"
                     else:
-                        response = "HTTP/1.0 400 Bad Request\r\n\r\nFailed to connect"
+                        response = "HTTP/1.0 500 Internal Server Error\r\n\r\nSTA interface not available"
                 else:
                     response = "HTTP/1.0 400 Bad Request\r\n\r\nMissing SSID or password"
             except Exception as e:
                 print(f"[ERROR] Failed to connect to network: {e}")
                 response = "HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to connect to network"
         else:
-            print("[ERROR] WiFiManager not available")
-            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nWiFiManager not available"
+            print("[ERROR] InterfaceManager not available")
+            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nInterfaceManager not available"
         
         writer.write(response.encode('utf-8'))
         await writer.drain()
