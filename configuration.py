@@ -15,6 +15,12 @@ class Configuration:
                 'ssid': '',
                 'password': ''
             },
+            'sta_ip': {
+                'static_ip': '',
+                'subnet_mask': '255.255.255.0',
+                'gateway': '',
+                'dns_server': '8.8.8.8'
+            },
             'server_ip': '192.168.4.1',
             'certfile': 'cert.pem',
             'keyfile': 'key.pem'
@@ -57,6 +63,9 @@ class Configuration:
     def get_sta_config(self):
         return self.config['sta']
 
+    def get_sta_ip_config(self):
+        return self.config['sta_ip']
+
     def get_server_ip(self):
         return self.config.get('server_ip', '192.168.4.1')
 
@@ -67,11 +76,23 @@ class Configuration:
         return self.config.get('keyfile', 'key.pem')
 
     def set(self, key, value):
-        self.config[key] = value
+        keys = key.split('.')
+        config = self.config
+        for k in keys[:-1]:
+            config = config.setdefault(k, {})
+        config[keys[-1]] = value
         self.save()
 
     def update(self, new_config):
-        self.config.update(new_config)
+        def update_dict(d, u):
+            for k, v in u.items():
+                if isinstance(v, dict):
+                    d[k] = update_dict(d.get(k, {}), v)
+                else:
+                    d[k] = v
+            return d
+        
+        self.config = update_dict(self.config, new_config)
         self.save()
 
     def reset_to_defaults(self):
@@ -84,6 +105,12 @@ class Configuration:
                 'ssid': '',
                 'password': ''
             },
+            'sta_ip': {
+                'static_ip': '',
+                'subnet_mask': '255.255.255.0',
+                'gateway': '',
+                'dns_server': '8.8.8.8'
+            },
             'server_ip': '192.168.4.1',
             'certfile': 'cert.pem',
             'keyfile': 'key.pem'
@@ -91,4 +118,11 @@ class Configuration:
         self.save()
 
     def display(self):
-        print(f"[INFO] Current Configuration: {self.config}")
+        print("[INFO] Current Configuration:")
+        for key, value in self.config.items():
+            if isinstance(value, dict):
+                print(f"  {key}:")
+                for sub_key, sub_value in value.items():
+                    print(f"    {sub_key}: {sub_value}")
+            else:
+                print(f"  {key}: {value}")

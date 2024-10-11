@@ -1,9 +1,9 @@
-import uasyncio as asyncio
+import uasyncio as asyncio # type: ignore
 from dns_server import DNSServer
 from http_server import HTTPServer
 from interface_manager import InterfaceManager
 from configuration import Configuration
-import machine
+import machine # type: ignore
 
 class CaptivePortal:
     def __init__(self):
@@ -11,13 +11,14 @@ class CaptivePortal:
         self.interface_manager = InterfaceManager(self.config)
         self.http_server = HTTPServer(
             root_directory='www', 
-            host='0.0.0.0', 
-            port=80, 
-            ssl_certfile='cert.pem', 
+            ports=[80], 
+            ssl_ports=[443],
+            ssl_certfile='cert.pem',
             ssl_keyfile='private.key'
         )
         self.http_server.set_interface_manager(self.interface_manager)
-        self.dns_server = DNSServer()
+        self.server_ip = self.config.get_server_ip()
+        self.dns_server = DNSServer(self.server_ip)
         self.stop_event = asyncio.Event()
 
     async def start(self):

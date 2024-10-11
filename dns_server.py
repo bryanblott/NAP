@@ -8,8 +8,8 @@ class DNSQuery:
         self.parse_domain()
 
     def parse_domain(self):
-        kind = (self.data[2] >> 3) & 15   # Opcode bits
-        if kind == 0:                     # Standard query
+        kind = (self.data[2] >> 3) & 15
+        if kind == 0:
             ini = 12
             lon = self.data[ini]
             while lon != 0:
@@ -20,15 +20,15 @@ class DNSQuery:
 
     def response(self, ip):
         packet = self.data[:2] + b'\x81\x80'
-        packet += self.data[4:6] + self.data[4:6] + b'\x00\x00\x00\x00'   # Questions and Answers Counts
-        packet += self.data[12:]                                          # Original Domain Name Question
-        packet += b'\xc0\x0c'                                             # Pointer to domain name
-        packet += b'\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04'             # Response type, ttl and resource data length -> 4 bytes
-        packet += bytes(map(int, ip.split('.')))                          # 4 bytes of IP
+        packet += self.data[4:6] + self.data[4:6] + b'\x00\x00\x00\x00'
+        packet += self.data[12:]
+        packet += b'\xc0\x0c'
+        packet += b'\x00\x01\x00\x01\x00\x00\x00\x3c\x00\x04'
+        packet += bytes(map(int, ip.split('.')))
         return packet
 
 class DNSServer:
-    def __init__(self, ip="192.168.4.1"):
+    def __init__(self, ip):
         self.ip = ip
         self.socket = None
         self.running = False
