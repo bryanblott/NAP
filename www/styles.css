@@ -1,19 +1,37 @@
-/* styles.css */
 body {
-    background-color: black; /* Set the background color to black */
-    color: white; /* Set the text color to white */
-    font-family: Arial, sans-serif; /* Use a clean, sans-serif font */
+    background-color: black !important;
+    color: white !important;
+    font-family: Arial, sans-serif;
+}
+
+h1, p, select, input, button, #status {
+    color: white !important;
 }
 
 h1, p {
-    text-align: center; /* Center the text */
-    margin: 20px; /* Add some space around the text */
+    text-align: center;
+    margin: 20px;
 }
 
 h1 {
-    font-size: 2em; /* Increase the font size of the main heading */
+    font-size: 2em;
 }
 
 p {
-    font-size: 1.2em; /* Slightly increase the font size of paragraphs */
+    font-size: 1.2em;
+}
+
+select, input, button {
+    display: block;
+    margin: 10px auto;
+    padding: 5px;
+    width: 200px;
+    background-color: #333 !important;
+    border: 1px solid white;
+}
+
+#status {
+    text-align: center;
+    margin-top: 20px;
+    font-weight: bold;
 }

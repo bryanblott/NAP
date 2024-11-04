@@ -1,12 +1,24 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP32 Captive Portal</title>
-    <link rel="stylesheet" type="text/css" href="styles.css">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <h1>Welcome to the ESP32 Captive Portal</h1>
-    <p>You are now connected to the captive portal. Enjoy!</p>
+    <h1>ESP32 Captive Portal</h1>
+    <p>Select a Wi-Fi network and enter the password to connect:</p>
+    
+    <button id="scanBtn">Scan Available Networks</button>
+    <select id="networks">
+        <option value="">Select a network</option>
+    </select>
+    <input type="password" id="password" placeholder="Enter password">
+    <button id="connectBtn">Connect</button>
+    
+    <div id="status"></div>
+    
     <script src="script.js"></script>
 </body>
 </html>
