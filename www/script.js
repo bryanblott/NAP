@@ -8,15 +8,20 @@ document.addEventListener('DOMContentLoaded', () => {
     scanBtn.addEventListener('click', fetchNetworks);
     connectBtn.addEventListener('click', connectToWiFi);
 
+    function logWithTimestamp(message) {
+        const timestamp = new Date().toISOString();
+        console.log(`[${timestamp}] ${message}`);
+    }
+
     function fetchNetworks() {
         statusDiv.textContent = 'Scanning for networks...';
         scanBtn.disabled = true;
+        logWithTimestamp('Initiating network scan');
         fetch('/scan')
             .then(response => {
-                console.log('Response status:', response.status);
-                console.log('Response headers:', response.headers);
+                logWithTimestamp(`Scan response received. Status: ${response.status}`);
                 return response.text().then(text => {
-                    console.log('Response text:', text);
+                    logWithTimestamp(`Response text: ${text}`);
                     if (!response.ok) {
                         throw new Error(`Network response was not ok: ${text}`);
                     }
@@ -24,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             })
             .then(data => {
-                console.log('Parsed data:', data);
+                logWithTimestamp(`Parsed scan data: ${JSON.stringify(data)}`);
                 if (!data.networks || data.networks.length === 0) {
                     throw new Error('No networks found');
                 }
@@ -36,13 +41,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     networkSelect.appendChild(option);
                 });
                 statusDiv.textContent = `Found ${data.networks.length} networks`;
+                logWithTimestamp(`Updated network list with ${data.networks.length} networks`);
             })
             .catch(error => {
-                console.error('Error fetching networks:', error);
+                logWithTimestamp(`Error fetching networks: ${error.message}`);
                 statusDiv.textContent = 'Failed to fetch networks: ' + error.message;
             })
             .finally(() => {
                 scanBtn.disabled = false;
+                logWithTimestamp('Network scan process completed');
             });
     }
 
@@ -54,9 +61,10 @@ document.addEventListener('DOMContentLoaded', () => {
             statusDiv.textContent = 'Please select a network';
             return;
         }
-
-        statusDiv.textContent = 'Connecting...';
+        
+        statusDiv.textContent = `Connecting to ${ssid}...`;
         connectBtn.disabled = true;
+        logWithTimestamp(`Initiating connection to SSID: ${ssid}`);
         
         fetch('/connect', {
             method: 'POST',
@@ -67,14 +75,24 @@ document.addEventListener('DOMContentLoaded', () => {
         })
         .then(response => response.text())
         .then(result => {
-            statusDiv.textContent = result;
+            logWithTimestamp(`Connection result: ${result}`);
+            statusDiv.innerHTML = result;  // Changed to innerHTML to support formatted text
+            
+            // If connection was successful, adjust status div styling
+            if (result.includes('Connected successfully')) {
+                statusDiv.style.color = '#00ff00';  // Green color for success
+            } else {
+                statusDiv.style.color = '#ff0000';  // Red color for failure
+            }
         })
         .catch(error => {
-            console.error('Error:', error);
+            logWithTimestamp(`Connection error: ${error.message}`);
             statusDiv.textContent = 'Connection failed: ' + error.message;
+            statusDiv.style.color = '#ff0000';  // Red color for error
         })
         .finally(() => {
             connectBtn.disabled = false;
+            logWithTimestamp('Connection process completed');
         });
     }
 });

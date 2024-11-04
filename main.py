@@ -1,28 +1,36 @@
+import machine # type: ignore
 import uasyncio as asyncio # type: ignore
+from utils import log_with_timestamp  # Updated import
 from dns_server import DNSServer
 from http_server import HTTPServer
 from interface_manager import InterfaceManager
 from configuration import Configuration
-import machine # type: ignore
+import utime
 
 class CaptivePortal:
     def __init__(self):
         self.config = Configuration()
         self.interface_manager = InterfaceManager(self.config)
-        self.http_server = HTTPServer(
-            root_directory='www', 
-            ports=[80], 
-            ssl_ports=[443],
-            ssl_certfile='cert.pem',
-            ssl_keyfile='private.key'
-        )
-        self.http_server.set_interface_manager(self.interface_manager)
+        self.http_server = HTTPServer(self.interface_manager)
+        # Set HTTP server properties after initialization
+        self.http_server.root_directory = 'www'
+        self.http_server.ports = [80]
+        self.http_server.ssl_ports = [443]
+        self.http_server.ssl_certfile = 'cert.pem'
+        self.http_server.ssl_keyfile = 'private.key'
         self.server_ip = self.config.get_server_ip()
         self.dns_server = DNSServer(self.server_ip)
         self.stop_event = asyncio.Event()
 
+    async def reset_sta_interface(self):
+        log_with_timestamp("[INFO] Resetting STA interface")
+        await self.interface_manager.stop_interface('sta')
+        await asyncio.sleep(1)
+        await self.interface_manager.start_interface('sta')
+
     async def start(self):
-        print("[INFO] CaptivePortal: Starting interfaces")
+        log_with_timestamp("[INFO] CaptivePortal: Starting interfaces")
+        await asyncio.sleep(2)  # Add a small delay before starting services
         ap_started = await self.interface_manager.start_interface("ap")
         sta_started = await self.interface_manager.start_interface("sta")
 
@@ -32,22 +40,19 @@ class CaptivePortal:
 
         dns_task = asyncio.create_task(self.dns_server.start())
         http_task = asyncio.create_task(self.http_server.start())
-        interface_management_task = asyncio.create_task(self.interface_manager.manage_interfaces())
-
+        interface_management_task = asyncio.create_task(self.manage_interfaces())
+        
         print("[INFO] CaptivePortal: Services started successfully.")
-        await self.stop_event.wait()
-
-        # Cancel tasks
-        dns_task.cancel()
-        http_task.cancel()
-        interface_management_task.cancel()
-        await asyncio.gather(dns_task, http_task, interface_management_task, return_exceptions=True)
+        
+        try:
+            await asyncio.gather(dns_task, http_task, interface_management_task)
+        except asyncio.CancelledError:
+            print("[INFO] CaptivePortal: Shutting down...")
+        finally:
+            await self.shutdown()
 
     async def shutdown(self):
         print("[INFO] CaptivePortal: Initiating shutdown...")
-        self.stop_event.set()
-        await asyncio.sleep(1)
-
         await self.interface_manager.stop_all_interfaces()
         await self.http_server.stop()
         print("[INFO] CaptivePortal: Shutdown complete")
@@ -56,6 +61,18 @@ class CaptivePortal:
         print("[INFO] Resetting the device...")
         await asyncio.sleep(1)  # Give some time for the message to be printed
         machine.reset()
+
+    async def manage_interfaces(self):
+        while True:
+            await asyncio.sleep(60)  # Check every 60 seconds
+            sta_interface = self.interface_manager.get_interface('sta')
+            if sta_interface:
+                if not sta_interface.is_connected() and not sta_interface.is_connecting():
+                    log_with_timestamp("[WARNING] STA disconnected. Attempting to reset and reconnect...")
+                    await self.reset_sta_interface()
+            else:
+                log_with_timestamp("[WARNING] STA interface not available. Attempting to start it...")
+                await self.interface_manager.start_interface('sta')
 
 async def main():
     captive_portal = CaptivePortal()

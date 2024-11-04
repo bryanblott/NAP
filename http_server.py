@@ -1,5 +1,7 @@
 import uasyncio as asyncio
 import ujson
+from utils import log_with_timestamp  # Updated import
+import json
 
 try:
     import ssl
@@ -10,20 +12,38 @@ except ImportError:
 def join_path(*args):
     return '/'.join(arg.strip('/') for arg in args)
 
+def url_decode(s):
+    log_with_timestamp(f"[DEBUG] url_decode input: {s}")
+    result = ''
+    i = 0
+    while i < len(s):
+        if s[i] == '%' and i + 2 < len(s):
+            try:
+                result += chr(int(s[i+1:i+3], 16))
+                i += 3
+            except ValueError:
+                result += s[i]
+                i += 1
+        else:
+            result += s[i]
+            i += 1
+    result = result.replace('+', ' ')
+    log_with_timestamp(f"[DEBUG] url_decode output: {result}")
+    return result
+
 class HTTPServer:
-    def __init__(self, root_directory='www', ports=[80], ssl_ports=[443], ssl_certfile='cert.pem', ssl_keyfile='private.key'):
-        self.root_directory = root_directory
-        self.ports = ports
-        self.ssl_ports = ssl_ports
-        self.ssl_certfile = ssl_certfile
-        self.ssl_keyfile = ssl_keyfile
+    def __init__(self, interface_manager):
+        self.interface_manager = interface_manager
+        self.root_directory = 'www'
+        self.ports = [80]
+        self.ssl_ports = [443]
+        self.ssl_certfile = 'cert.pem'
+        self.ssl_keyfile = 'private.key'
         self.servers = []
         self.use_tls = self.check_tls_files()
         self.running = False
-        self.interface_manager = None
-
-    def set_interface_manager(self, interface_manager):
-        self.interface_manager = interface_manager
+        self.max_concurrent_requests = 5
+        self.current_requests = 0
 
     def check_tls_files(self):
         try:
@@ -31,9 +51,6 @@ class HTTPServer:
                 pass
             with open(self.ssl_keyfile, 'r'):
                 pass
-            if ssl is None:
-                print("[WARNING] TLS files found, but ssl module not available. Falling back to HTTP.")
-                return False
             return True
         except OSError:
             print("[WARNING] TLS certificate or key file not found. Falling back to HTTP.")
@@ -63,6 +80,8 @@ class HTTPServer:
                     self.use_tls = False
 
             self.running = True
+            while self.running:
+                await asyncio.sleep(1)  # Cooperative yield
         except Exception as e:
             print(f"[ERROR] HTTP(S) Server: Failed to start: {e}")
             self.running = False
@@ -100,65 +119,38 @@ class HTTPServer:
         return None, "0.0.0.0"
 
     async def handle_request(self, reader, writer):
+        log_with_timestamp("[DEBUG] HTTP(S) Server: Handling new request")
         try:
             request_line = await reader.readline()
-            if not request_line:
-                print("[WARNING] Empty request received")
-                return
-
-            print(f"[DEBUG] HTTP(S) Server: Received request: {request_line}")
+            log_with_timestamp(f"[DEBUG] HTTP(S) Server: Received request: {request_line}")
             
             method, path, version = request_line.decode().strip().split(' ', 2)
-            print(f"[DEBUG] Parsed request - Method: {method}, Path: {path}")
+            log_with_timestamp(f"[DEBUG] Parsed request - Method: {method}, Path: {path}")
             
             client_address = writer.get_extra_info('peername')[0]
             client_interface, server_ip = self.get_client_interface(client_address)
             
-            print(f"[DEBUG] Client connected via {client_interface} interface")
+            log_with_timestamp(f"[DEBUG] Client connected via {client_interface} interface")
 
-            if method == 'CONNECT':
-                print(f"[DEBUG] Received CONNECT request for {path}")
-                response = "HTTP/1.1 200 Connection Established\r\n\r\n"
-                writer.write(response.encode('utf-8'))
-                await writer.drain()
-                return
-
-            # Handle specific requests regardless of client interface
             if path == '/scan':
-                print("[DEBUG] Routing to handle_scan_request")
                 await self.handle_scan_request(writer)
-                return
             elif path == '/connect' and method == 'POST':
-                print("[DEBUG] Routing to handle_connect_request")
                 await self.handle_connect_request(reader, writer)
-                return
-
-            # Handle captive portal detection and redirects only for AP clients
-            if client_interface == 'ap':
-                if self.is_captive_portal_request(path):
-                    await self.captive_portal_redirect(writer, server_ip)
-                    return
-                elif path != '/' and path != '/index.html' and '.' not in path:
-                    await self.captive_portal_redirect(writer, server_ip)
-                    return
-
-            # Normal request handling for both AP and STA clients
-            if path == '/' or path == '/index.html':
-                print("[DEBUG] Serving index.html")
-                await self.serve_file('index.html', writer)
-            elif path.startswith('/'):
-                print(f"[DEBUG] Serving file: {path[1:]}")
-                await self.serve_file(path[1:], writer)
+            elif path in ['/hotspot-detect.html', '/generate_204', '/ncsi.txt']:
+                await self.handle_captive_portal_detection(writer, server_ip)
+            elif path == '/index.html' or path == '/':
+                await self.serve_file(writer, 'index.html')
             else:
-                print(f"[DEBUG] Unrecognized path: {path}")
-                response = "HTTP/1.0 404 Not Found\r\n\r\nNot Found"
-                writer.write(response.encode('utf-8'))
-            
-            await writer.drain()
+                await self.serve_file(writer, path.lstrip('/'))
+
         except Exception as e:
-            print(f"[ERROR] HTTP(S) Server: Error handling request: {e}")
+            log_with_timestamp(f"[ERROR] HTTP(S) Server: Error handling request: {e}")
+            writer.write(b"HTTP/1.0 500 Internal Server Error\r\n\r\nInternal Server Error")
         finally:
+            await writer.drain()
+            writer.close()
             await writer.wait_closed()
+            log_with_timestamp("[DEBUG] HTTP(S) Server: Connection closed")
 
     def is_captive_portal_request(self, path):
         captive_portal_paths = [
@@ -177,18 +169,18 @@ class HTTPServer:
         response = f"HTTP/1.1 307 Temporary Redirect\r\nLocation: {location}\r\nCache-Control: no-cache\r\n\r\n"
         writer.write(response.encode())
         await writer.drain()
-        print(f"[DEBUG] Captive Portal: Redirected to: {location}")
+        log_with_timestamp(f"[DEBUG] Captive Portal: Redirected to: {location}")
 
-    async def serve_file(self, path, writer):
+    async def serve_file(self, writer, path):
         try:
             full_path = join_path(self.root_directory, path)
-            print(f"[DEBUG] Attempting to serve file: {full_path}")
+            log_with_timestamp(f"[DEBUG] Attempting to serve file: {full_path}")
             
             try:
                 with open(full_path, "rb") as file:
                     content = file.read()
             except OSError:
-                print(f"[ERROR] File not found: {full_path}")
+                log_with_timestamp(f"[ERROR] File not found: {full_path}")
                 response = f"HTTP/1.0 404 Not Found\r\n\r\nFile not found: {path}"
                 writer.write(response.encode('utf-8'))
                 return
@@ -200,9 +192,9 @@ class HTTPServer:
             writer.write(b"Cache-Control: no-cache\r\n")
             writer.write(b"\r\n")
             writer.write(content)
-            print(f"[DEBUG] File served successfully: {full_path}")
+            log_with_timestamp(f"[DEBUG] File served successfully: {full_path}")
         except Exception as e:
-            print(f"[ERROR] Failed to serve file {path}: {e}")
+            log_with_timestamp(f"[ERROR] Failed to serve file {path}: {e}")
             response = f"HTTP/1.0 500 Internal Server Error\r\n\r\nError serving file: {path}"
             writer.write(response.encode('utf-8'))
         await writer.drain()
@@ -218,147 +210,113 @@ class HTTPServer:
             return 'text/plain'
 
     async def handle_scan_request(self, writer):
-        print("[DEBUG] Inside handle_scan_request")
-        if self.interface_manager:
+        log_with_timestamp("[DEBUG] Handling scan request")
+        sta_interface = self.interface_manager.get_interface('sta')
+        if sta_interface:
             try:
-                sta_interface = self.interface_manager.interfaces.get('sta')
-                if sta_interface:
-                    print("[DEBUG] STA interface found, initiating scan")
-                    networks = await sta_interface.scan_networks()
-                    print(f"[DEBUG] Raw scan results: {networks}")
-                    response_data = ujson.dumps({"networks": networks})
-                    print(f"[DEBUG] JSON response: {response_data}")
-                    headers = [
-                        "HTTP/1.0 200 OK",
-                        "Content-Type: application/json",
-                        f"Content-Length: {len(response_data)}",
-                        "Access-Control-Allow-Origin: *",
-                        "",
-                        ""
-                    ]
-                    response = "\r\n".join(headers).encode('utf-8') + response_data.encode('utf-8')
-                else:
-                    print("[ERROR] STA interface not available")
-                    response = "HTTP/1.0 500 Internal Server Error\r\nContent-Type: application/json\r\n\r\n{\"error\": \"STA interface not available\"}".encode('utf-8')
+                networks = await sta_interface.scan_networks()
+                log_with_timestamp(f"[DEBUG] Scanned networks: {networks}")
+                response = json.dumps({"networks": networks})
+                writer.write(f"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n\r\n{response}".encode())
             except Exception as e:
-                print(f"[ERROR] Failed to scan networks: {e}")
-                response = f"HTTP/1.0 500 Internal Server Error\r\nContent-Type: application/json\r\n\r\n{{\"error\": \"Failed to scan networks: {str(e)}\"}}".encode('utf-8')
+                log_with_timestamp(f"[ERROR] Failed to scan networks: {e}")
+                writer.write(b"HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to scan networks")
         else:
-            print("[ERROR] InterfaceManager not available")
-            response = "HTTP/1.0 500 Internal Server Error\r\nContent-Type: application/json\r\n\r\n{\"error\": \"InterfaceManager not available\"}".encode('utf-8')
-        
-        print(f"[DEBUG] Sending response: {response}")
-        writer.write(response)
+            log_with_timestamp("[ERROR] STA interface not available for scanning")
+            writer.write(b"HTTP/1.0 500 Internal Server Error\r\n\r\nSTA interface not available")
         await writer.drain()
-        print("[DEBUG] Scan response sent")
-        
+        writer.close()
+        await writer.wait_closed()
+
+    
     async def handle_connect_request(self, reader, writer):
-        print("[DEBUG] Handling connect request")
-        if self.interface_manager:
-            try:
-                # Read headers
-                headers = {}
-                content_length = 0
-                while True:
-                    line = await reader.readline()
-                    print(f"[DEBUG] Header line: {line}")
-                    if line == b'\r\n':
-                        break
-                    if line == b'':
-                        print("[ERROR] Unexpected end of request while reading headers")
-                        break
-                    try:
-                        name, value = line.decode().strip().split(': ', 1)
-                        headers[name.lower()] = value
-                        if name.lower() == 'content-length':
-                            content_length = int(value)
-                    except ValueError:
-                        print(f"[ERROR] Invalid header: {line}")
+        log_with_timestamp("[DEBUG] Handling connect request")
+        response = "Internal Server Error"
+        try:
+            content_length = 0
+            headers = {}
+            while True:
+                line = await reader.readline()
+                if line == b'\r\n':
+                    break
+                if line.startswith(b'Content-Length:'):
+                    content_length = int(line.split(b':')[1])
+                headers[line.split(b':')[0].decode('utf-8').lower()] = line.split(b':')[1].strip().decode('utf-8')
 
-                print(f"[DEBUG] Headers: {headers}")
-                print(f"[DEBUG] Content-Length: {content_length}")
+            body = await reader.read(content_length)
+            data = body.decode('utf-8')
+            log_with_timestamp(f"[DEBUG] Raw request body: {data}")
+            
+            params = {}
+            for param in data.split('&'):
+                key, value = param.split('=')
+                params[key] = value
+                log_with_timestamp(f"[DEBUG] Raw parameter: {key} = {value}")
 
-                if content_length == 0:
-                    print("[ERROR] Content-Length is 0, no POST data received")
-                    response = "HTTP/1.0 400 Bad Request\r\n\r\nNo POST data received"
-                else:
-                    # Read POST data
-                    post_data = await reader.read(content_length)
-                    data = post_data.decode('utf-8')
-                    print(f"[DEBUG] Raw POST data: {data}")
+            ssid_raw = params.get('ssid', '')
+            password_raw = params.get('password', '')
+            log_with_timestamp(f"[DEBUG] Raw SSID: {ssid_raw}")
+            log_with_timestamp(f"[DEBUG] Raw password: {password_raw}")
 
-                    # Parse POST data
-                    params = {}
-                    for param in data.split('&'):
-                        if '=' in param:
-                            key, value = param.split('=', 1)
-                            params[key] = self.url_decode(value)
-                        else:
-                            print(f"[WARNING] Malformed parameter: {param}")
+            ssid = url_decode(ssid_raw)
+            password = url_decode(password_raw)
 
-                    ssid = params.get('ssid', '')
-                    password = params.get('password', '')
+            log_with_timestamp(f"[DEBUG] Decoded SSID: '{ssid}'")
+            log_with_timestamp(f"[DEBUG] Decoded password: '{password}'")
 
-                    print(f"[DEBUG] Parsed SSID: {ssid}")
-                    print(f"[DEBUG] Parsed Password (length): {len(password)}")
-
-                    if ssid and password:
-                        print(f"[DEBUG] Attempting to connect to SSID: {ssid}")
-                        sta_interface = self.interface_manager.interfaces.get('sta')
-                        if sta_interface:
-                            print("[DEBUG] STA interface found")
-                            # Temporarily disable auto-reconnect
-                            print("[DEBUG] Disabling auto-reconnect")
-                            self.interface_manager.disable_auto_reconnect()
-                            try:
-                                print("[DEBUG] Calling sta_interface.connect")
-                                success = await sta_interface.connect(ssid, password)
-                                print(f"[DEBUG] Connection attempt result: {success}")
-                            except Exception as e:
-                                print(f"[ERROR] Exception during connection attempt: {e}")
-                                success = False
-                            finally:
-                                print("[DEBUG] Re-enabling auto-reconnect")
-                                self.interface_manager.enable_auto_reconnect()
-                            
-                            if success:
-                                ip_address = sta_interface.get_ip()
-                                print(f"[DEBUG] Successfully connected. IP: {ip_address}")
-                                response = f"HTTP/1.0 200 OK\r\n\r\nConnected successfully to {ssid}. IP: {ip_address}"
-                            else:
-                                print("[DEBUG] Connection failed")
-                                response = "HTTP/1.0 400 Bad Request\r\n\r\nFailed to connect. Please check the SSID and password."
-                        else:
-                            print("[ERROR] STA interface not available")
-                            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nSTA interface not available"
+            if ssid and password:
+                sta_interface = self.interface_manager.get_interface('sta')
+                if sta_interface:
+                    if sta_interface.is_connecting():
+                        response = "Connection attempt already in progress"
                     else:
-                        print("[ERROR] Missing SSID or password")
-                        response = "HTTP/1.0 400 Bad Request\r\n\r\nMissing SSID or password"
-            except Exception as e:
-                print(f"[ERROR] Failed to process connect request: {e}")
-                response = f"HTTP/1.0 500 Internal Server Error\r\n\r\nFailed to process connect request: {str(e)}"
-        else:
-            print("[ERROR] InterfaceManager not available")
-            response = "HTTP/1.0 500 Internal Server Error\r\n\r\nInterfaceManager not available"
-
-        print(f"[DEBUG] Sending response: {response}")
-        writer.write(response.encode('utf-8'))
-        await writer.drain()
-        print(f"[DEBUG] Connect response sent: {response}")
-
-    def url_decode(self, s):
-        """Improved URL decoding function"""
-        s = s.replace('+', ' ')
-        s = s.split('%')
-        res = s[0]
-        for h in s[1:]:
-            if len(h) > 2:
-                res += chr(int(h[:2], 16)) + h[2:]
-            elif len(h) == 2:
-                res += chr(int(h, 16))
+                        success = await sta_interface.connect(ssid, password)
+                        if success:
+                            # Get the IP address after successful connection
+                            ip_address = sta_interface.get_ip()
+                            response = f"Connected successfully to '{ssid}' with IP: {ip_address}"
+                        else:
+                            response = f"Failed to connect to '{ssid}'. Please check the password and try again."
+                else:
+                    response = "STA interface not available"
             else:
-                res += '%' + h
-        return res
+                response = "Missing SSID or password"
+
+        except Exception as e:
+            log_with_timestamp(f"[ERROR] Error in handle_connect_request: {e}")
+            response = "Internal Server Error"
+
+        try:
+            writer.write(f"HTTP/1.0 200 OK\r\nContent-Type: text/plain\r\n\r\n{response}".encode())
+            await writer.drain()
+        except Exception as e:
+            log_with_timestamp(f"[ERROR] Failed to send response: {e}")
+        finally:
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception as e:
+                log_with_timestamp(f"[ERROR] Failed to close writer: {e}")
+            log_with_timestamp(f"[DEBUG] Connect response sent: {response}")
 
     def is_running(self):
         return self.running
+
+    async def handle_captive_portal_detection(self, writer, server_ip):
+        log_with_timestamp("[DEBUG] Handling captive portal detection request")
+        content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Success</title>
+            <meta http-equiv="refresh" content="0;url=http://{server_ip}/index.html">
+        </head>
+        <body>
+            <p>Success</p>
+        </body>
+        </html>
+        """
+        response = f"HTTP/1.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: {len(content)}\r\n\r\n{content}"
+        writer.write(response.encode())
+        await writer.drain()
+        log_with_timestamp("[DEBUG] Captive portal detection response sent")
